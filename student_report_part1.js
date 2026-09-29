@@ -3,8 +3,8 @@
 let STUDENT = null
 let DATA_ERROR = null
 
-const SUPABASE_URL = "https://twczhsxybkcvjkdfdxvs.supabase.co"
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3Y3poc3h5YmtjdmprZGZkeHZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyOTcwMDQsImV4cCI6MjEwMzg3MzAwNH0.t7Ltb_iSYqE4gHSoGSm-OlpiLjGqIcgrhzGJ-t56EDc"
+const SUPABASE_URL = "https://dtltoanvjgrqkmsqxhvh.supabase.co"
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR0bHRvYW52amdycWttc3F4aHZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA2NjM0MjQsImV4cCI6MjEwNjIzOTQyNH0.k4LZeh6OqjWaUpeU0hDAWZvwAxJnjZI3rSnqXp8ROvE"
 
 // 반마다 서로 다른 색상 이모지를 안정적으로 배정한다 (같은 반 이름이면 항상 같은 색).
 // 실제 반 색상 데이터가 서버에서 내려오면 이 함수를 그 값으로 교체하면 된다.

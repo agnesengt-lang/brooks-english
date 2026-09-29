@@ -495,8 +495,8 @@
   updateDisplay();
 
   // ============ 공용 로그인 (admin.html과 같은 localStorage 키를 사용해 한 번만 로그인하면 됩니다) ============
-  const SUPABASE_URL = "https://twczhsxybkcvjkdfdxvs.supabase.co";
-  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3Y3poc3h5YmtjdmprZGZkeHZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyOTcwMDQsImV4cCI6MjEwMzg3MzAwNH0.t7Ltb_iSYqE4gHSoGSm-OlpiLjGqIcgrhzGJ-t56EDc";
+  const SUPABASE_URL = "https://dtltoanvjgrqkmsqxhvh.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR0bHRvYW52amdycWttc3F4aHZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA2NjM0MjQsImV4cCI6MjEwNjIzOTQyNH0.k4LZeh6OqjWaUpeU0hDAWZvwAxJnjZI3rSnqXp8ROvE";
   const ADMIN_KEY_STORAGE = "admin_key";
   function getAdminKey() { return localStorage.getItem(ADMIN_KEY_STORAGE) || ""; }
   function showLoginScreen(errorMsg) {
