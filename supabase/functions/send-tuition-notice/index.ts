@@ -1,0 +1,275 @@
+// supabase/functions/send-tuition-notice/index.ts (v3)
+// 수강료 안내 카카오 알림톡 발송. 수강료(학원) DB의 "수강료 안내 발송" 버튼이 호출합니다.
+// - [v2] Notion 버튼의 "웹훅 보내기" 액션은 커스텀 HTTP 헤더를 보낼 수 없으므로,
+//   x-admin-key 헤더가 없으면 요청 바디의 adminKey 필드도 확인합니다 (send-daily-report와 동일 패턴).
+// - [v2] 관리자 키는 adminShared의 getCurrentAdminKey()로 확인합니다 (KV에 저장된 값이 있으면 그것을,
+//   없으면 Secrets의 ADMIN_SECRET을 기본값으로 사용) — 다른 어드민 함수들과 동일한 방식입니다.
+// - [v2] pfId/템플릿ID/발신번호는 "알림톡 설정(학원) DB"의 "수강료 안내" 행에서 조회하고,
+//   값이 없거나 비활성화된 경우에만 Secrets 기본값(Fallback)으로 대체합니다.
+// - [v2] 변수 매핑을 최종 확정된 알림톡 템플릿에 맞춰 갱신했습니다:
+//   #{청구기간} #{학생이름} #{클래스} #{청구금액} #{안내멘트}
+//   (청구기간(표시)/청구금액(표시)/클래스(수강료)/안내멘트는 2026-09 추가된 새 속성입니다.)
+// - [v3, 2026-09-16] send-report와 100% 중복이던 헬퍼(getFormulaText/getDateRange/getRelationFirstId/
+//   normalizePhone/발송중 락 처리)를 _shared/alimtalkShared.ts로 옮기고 이 파일에서는 가져다 씁니다
+//   (로드맵 5-9 공용 모듈화 후속). 동작은 이전과 동일합니다.
+// - [v4, 2026-09-17] "안내멘트"는 수강료(학원) DB에 존재하지도 않는 롤업(getRollupText(tuitionPage,
+//   "안내멘트"))을 읽으려고 해서 항상 빈 값이 나가던 버그를 수정. 이제 getAlimtalkConfig()가 돌려주는
+//   "알림톡 설정(학원) DB"의 "수강료 안내" 행 안내멘트를 그대로 사용한다 (adminShared.ts 참고).
+// - [v5, 2026-09-17] 안내멘트가 여전히 발송 메시지에 안 보인다는 리포트로 원인 추적용 임시 디버그
+//   로그 추가 (실제로 solapi에 보내는 variables 전체와 notice 길이를 로그로 남김). 기능 변경 없음.
+// - [v6, 2026-09-20] send-textbook-notice와 100% 중복이던 getRollupText/extractRollupItemText를
+//   _shared/alimtalkShared.ts로 옮기고 이 파일에서는 가져다 쓴다 (웹훅 코드 정리 4단계). 동작은 동일.
+// - [v7, 2026-09-22] 발송 성공 후 "일괄전송 선택" 체크박스를 자동으로 해제한다. 개별 "수강료 안내
+//   발송" 버튼으로 이미 보낸 건이 나중에 클래스/발송함의 "일괄 전송"에 다시 걸려 중복 발송되는 것을
+//   막기 위함(사용자 요청). send-report와 동일한 패턴 적용.
+// - [v8, 2026-09-23, PART N-8: 일괄전송 고정 청크 재설계] send-selected-notifications가 호출할 때
+//   (SYNC_WAIT_FLAG=true) 발송이 실패해도 "일괄전송 선택"을 해제한다. 예전에는 실패 시 체크박스를
+//   그대로 켜둬서 "다음 일괄전송에서 재시도"를 노렸지만, 연락처 누락처럼 재시도해도 항상 실패하는
+//   건이 있으면 매 이어달리기(자기 자신 재호출)마다 똑같이 다시 걸려 무한 반복될 위험이 있었다. 이제
+//   일괄전송 경로는 "1건당 1회 시도 -> 결과와 무관하게 체크 해제"로 단순화하고, 실패 이력은 전송로그
+//   (자동화 로그)에 남기고 배치 완료 메시지에도 이름+사유를 나열해 사용자가 직접 확인/재처리하게 한다.
+//   개별 "수강료 안내 발송" 버튼 클릭(SYNC_WAIT_FLAG 없음)은 이 변경의 영향을 받지 않는다 -- 사람이
+//   직접 누른 시도가 실패했다고 대상에서 자동으로 빠지면 오히려 혼란스러울 수 있어서, 그 경로는
+//   기존 동작(체크박스 유지)을 그대로 둔다.
+
+import {
+  notionGetPage,
+  notionPatchPageProperties,
+  createSendLogEntry,
+  getAlimtalkConfig,
+  getCurrentAdminKey,
+  resolveAdminKeyFromRequest,
+  getBotUserId,
+  extractErrorMessage,
+} from "../_shared/adminShared.ts"
+import {
+  getFormulaText,
+  getDateRange,
+  getRelationFirstId,
+  getRollupText,
+  normalizePhone,
+  resolveAlimtalkRecipients,
+  isSendingLockActive,
+  withSendingLock,
+  SYNC_WAIT_FLAG,
+} from "../_shared/alimtalkShared.ts"
+import { runInBackground, respondAccepted } from "../_shared/backgroundTask.ts"
+
+const SOLAPI_API_KEY = Deno.env.get("SOLAPI_API_KEY")!
+const SOLAPI_API_SECRET = Deno.env.get("SOLAPI_API_SECRET")!
+const SOLAPI_SENDER_NUMBER_FALLBACK = Deno.env.get("SOLAPI_SENDER_NUMBER") ?? ""
+const SOLAPI_PF_ID_FALLBACK = Deno.env.get("SOLAPI_PF_ID") ?? ""
+const SOLAPI_TEMPLATE_ID_TUITION_FALLBACK = Deno.env.get("SOLAPI_TEMPLATE_ID_TUITION") ?? ""
+
+// 보고서(학원) DB / 수강료(학원) DB에 공통으로 있는 체크박스. send-selected-notifications가
+// 일괄전송 대상을 고르는 필터이기도 하다 (_shared/PROP_BULK_SELECT와 이름을 동일하게 유지).
+const PROP_BULK_SELECT = "일괄전송 선택"
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-admin-key",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+}
+
+function getRichText(page: any, name: string): string {
+  return (page.properties?.[name]?.rich_text ?? []).map((t: any) => t.plain_text).join("")
+}
+
+// [NEW, v7] 발송 성공 후 "일괄전송 선택"을 꺼서, 이 수강료 건이 다음 "일괄 전송" 클릭에서 다시
+// 골라지지 않도록 한다(중복 발송 방지). 이미 꺼져 있어도 그대로 false를 써서 문제없다.
+// 실패해도 로그만 남기고 응답에는 영향을 주지 않는다 (발송 자체는 이미 끝난 뒤).
+async function clearBulkSelectFlag(tuitionId: string): Promise<void> {
+  try {
+    await notionPatchPageProperties(tuitionId, { [PROP_BULK_SELECT]: { checkbox: false } })
+  } catch (err) {
+    console.error("일괄전송 선택 해제 실패:", tuitionId, (err as Error).message)
+  }
+}
+
+async function sendAlimtalk(
+  to: string,
+  variables: Record<string, string>,
+  config: { pfId: string; templateId: string; senderNumber: string },
+) {
+  if (!to) throw new Error("Missing recipient phone number (학부모 연락처).")
+  if (!config.templateId) {
+    throw new Error(
+      "템플릿 ID가 설정되지 않았습니다. '알림톡 설정(학원) DB'의 '수강료 안내' 행에 템플릿 ID를 입력해주세요.",
+    )
+  }
+  const { SolapiMessageService } = await import("npm:solapi")
+  const messageService = new SolapiMessageService(SOLAPI_API_KEY, SOLAPI_API_SECRET)
+  return messageService.send({
+    to: normalizePhone(to),
+    from: normalizePhone(config.senderNumber),
+    kakaoOptions: {
+      pfId: config.pfId,
+      templateId: config.templateId,
+      variables,
+      disableSms: false,
+    },
+  })
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders })
+
+  let body: any
+  try {
+    body = await req.json()
+  } catch (_e) {
+    return new Response(JSON.stringify({ error: "invalid JSON body" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json", ...corsHeaders },
+    })
+  }
+
+  const adminKey = resolveAdminKeyFromRequest(req, body)
+  const currentAdminKey = await getCurrentAdminKey()
+  if (!adminKey || adminKey !== currentAdminKey) {
+    return new Response(JSON.stringify({ error: "unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json", ...corsHeaders },
+    })
+  }
+
+  try {
+    const tuitionId = body?.data?.id ?? body?.tuitionId ?? null
+    if (!tuitionId) {
+      return new Response(JSON.stringify({ error: "tuitionId required" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      })
+    }
+
+    const tuitionPage = await notionGetPage(tuitionId)
+
+    if (isSendingLockActive(tuitionPage, "발송중")) {
+      return new Response(JSON.stringify({ ok: true, message: "already_processing", tuitionId }), {
+        status: 200,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      })
+    }
+
+    const studentName = getFormulaText(tuitionPage, "학생정보")
+    const className = getRollupText(tuitionPage, "클래스(수강료)")
+    const parentPhone = getRollupText(tuitionPage, "학부모 연락처")
+    const period = getDateRange(tuitionPage, "청구기간")
+    const periodDisplay = getFormulaText(tuitionPage, "청구기간(표시)")
+    const amountDisplay = getFormulaText(tuitionPage, "청구금액(표시)")
+    const billingMonth = getFormulaText(tuitionPage, "청구년월(보고서)")
+    const registrationId = getRelationFirstId(tuitionPage, "등록")
+
+    // [NEW, 2026-09-23, PART N-7: 개별 버튼 응답 지연 해소] send-report와 동일한 이유로, 개별
+    // "수강료 안내 발송" 버튼 클릭 경로는 즉시 응답 + 백그라운드 처리로 전환한다. 다만
+    // send-selected-notifications(일괄 전송)는 이 함수의 최종 성공/실패로 "일괄전송 선택" 체크박스를
+    // 끄거나 재시도용으로 남겨두므로, body에 SYNC_WAIT_FLAG(=true)가 있으면 예전과 동일하게 끝까지
+    // 동기로 기다린다 (send-selected-notifications만 이 플래그를 보낸다).
+    const performSend = async (): Promise<{ sendResult: unknown }> => {
+      const clickerUserId =
+        body?.data?.properties?.["실행자"]?.people?.[0]?.id ??
+        tuitionPage.properties?.["실행자"]?.people?.[0]?.id ??
+        null
+      const senderUserId = clickerUserId ?? (await getBotUserId().catch(() => null)) ?? undefined
+
+      const config = await getAlimtalkConfig("수강료 안내", {
+        pfId: SOLAPI_PF_ID_FALLBACK,
+        templateId: SOLAPI_TEMPLATE_ID_TUITION_FALLBACK,
+        senderNumber: SOLAPI_SENDER_NUMBER_FALLBACK,
+      })
+      // [FIX, 2026-09-17] "안내멘트"는 수강료(학원) DB에 없는 롤업이 아니라, "알림톡 설정(학원) DB"의
+      // "수강료 안내" 행 안내멘트를 그대로 쓴다 (예전 getRollupText(tuitionPage, "안내멘트")는 항상 빈 값이었음).
+      const notice = config.notice
+
+      const variables: Record<string, string> = {
+        "#{청구년월}": billingMonth,
+        "#{청구기간}": periodDisplay,
+        "#{학생이름}": studentName,
+        "#{클래스}": className,
+        "#{청구금액}": amountDisplay,
+        "#{안내멘트}": notice,
+      }
+
+      // [DEBUG, 2026-09-17] 안내멘트 누락 원인 추적용 임시 로그. 원인 파악 후 제거 예정.
+      console.log(
+        `[send-tuition-notice][debug] tuitionId=${tuitionId}, noticeLength=${notice.length}, templateId=${config.templateId}, pfId=${config.pfId}, variables=${JSON.stringify(variables)}`,
+      )
+
+      const sendResult = await withSendingLock(tuitionId, "발송중", async () => {
+        try {
+          if (!registrationId) throw new Error("이 수강료 안내에 연결된 등록이 없습니다.")
+          const recipients = await resolveAlimtalkRecipients({
+            registrationId,
+            primaryPhone: parentPhone,
+            recipientTarget: config.recipientTarget,
+          })
+          const sendResults = []
+          for (const recipient of recipients) {
+            sendResults.push(await sendAlimtalk(recipient.phone, variables, config))
+          }
+          return sendResults
+        } catch (sendErr) {
+          if (registrationId) {
+            await createSendLogEntry({
+              registrationId,
+              tuitionId,
+              senderUserId,
+              title: studentName || "수강료 안내",
+              category: "수강료 안내",
+              status: "실패",
+              periodStart: period.start || undefined,
+              periodEnd: period.end || undefined,
+              failReason: extractErrorMessage(sendErr),
+            })
+          }
+          // [v8, PART N-8] 일괄전송 경로에서는 실패해도 1회 시도로 끝낸다 (위 파일 상단 주석 참고).
+          if (body?.[SYNC_WAIT_FLAG] === true) {
+            await clearBulkSelectFlag(tuitionId)
+          }
+          throw sendErr
+        }
+      }, { skipMinVisibleDelay: body?.[SYNC_WAIT_FLAG] === true })
+
+      if (registrationId) {
+        await createSendLogEntry({
+          registrationId,
+          tuitionId,
+          senderUserId,
+          title: studentName || "수강료 안내",
+          category: "수강료 안내",
+          status: "성공",
+          periodStart: period.start || undefined,
+          periodEnd: period.end || undefined,
+        })
+      }
+
+      await clearBulkSelectFlag(tuitionId)
+
+      return { sendResult }
+    }
+
+    const waitForCompletion = body?.[SYNC_WAIT_FLAG] === true
+    if (waitForCompletion) {
+      const result = await performSend()
+      return new Response(JSON.stringify(result), {
+        status: 200,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      })
+    }
+
+    runInBackground(async () => {
+      try {
+        await performSend()
+      } catch (err) {
+        console.error("send-tuition-notice background 처리 실패:", tuitionId, (err as Error).message)
+      }
+    })
+
+    return respondAccepted({ tuitionId })
+  } catch (err) {
+    return new Response(JSON.stringify({ error: String((err as any)?.message ?? err) }), {
+      status: 500,
+      headers: { "Content-Type": "application/json", ...corsHeaders },
+    })
+  }
+})

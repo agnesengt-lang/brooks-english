@@ -1,0 +1,25 @@
+name: Sync Attendance (daily reconcile)
+
+on:
+  schedule:
+    # 매일 16:00 UTC = 한국시간(KST, UTC+9) 새벽 1시. 증분 동기화가 놓칠 수 있는 변경분(특히 Notion에서
+    # 삭제된 출석 레코드)까지 전체를 다시 훑어서 정합성을 맞춥니다.
+    - cron: '0 16 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call sync-attendance (mode=reconcile)
+        run: |
+          set -e
+          curl -sS -X POST "https://${SUPABASE_PROJECT_ID}.supabase.co/functions/v1/sync-attendance" \
+            -H "apikey: ${SUPABASE_ANON_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+            -H "x-admin-key: ${{ secrets.ADMIN_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -d '{"mode":"reconcile"}'
+        env:
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}

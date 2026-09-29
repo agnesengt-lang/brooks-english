@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>출결 체크 키오스크</title>
+<style>
+  :root {
+    --kiosk-w: min(90vw, calc(90vh * 0.68), 640px);
+    --text-primary: #2C2C2B;
+    --text-secondary: #7D7A75;
+    --canvas: #FFFFFF;
+    --surface: #F9F8F7;
+    --surface-2: #F0EFED;
+    --border: #E6E5E3;
+    --blue: #2783DE;
+    --blue-soft: #E5F2FC;
+    --green: #46A171;
+    --green-soft: #E8F1EC;
+    --red: #E56458;
+    --red-soft: #FCE9E7;
+  }
+  html {
+    font-size: calc(16px * var(--kiosk-w) / 360px);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: var(--surface);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--text-primary);
+  }
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 5vh 5vw;
+  }
+  .kiosk {
+    width: var(--kiosk-w);
+    aspect-ratio: 0.6;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    overflow: hidden;
+    background: var(--canvas);
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    box-shadow: 0 1px 2px rgba(0,0,0,.05), 0 4px 12px rgba(0,0,0,.04);
+    padding: 1.5rem 1.25rem;
+  }
+  .header { position: relative; text-align: center; margin-bottom: 1rem; }
+  .header .icon { width: 1.75rem; height: 1.75rem; margin: 0 auto 0.25rem; display: flex; }
+  .header h1 { font-size: 1.25rem; margin: 0.25rem 0 0.125rem; font-weight: 700; }
+  .header p { font-size: 0.8125rem; color: var(--text-secondary); margin: 0; }
+  .settings-btn {
+    position: absolute;
+    top: -0.25rem;
+    right: -0.25rem;
+    width: 2rem;
+    height: 2rem;
+    padding: 0.5rem;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: var(--text-secondary);
+    border-radius: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .settings-btn:active { background: var(--surface-2); }
+  .display {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    height: 3.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.375rem;
+    font-weight: 600;
+    letter-spacing: 1px;
+    margin-bottom: 1rem;
+    color: var(--text-primary);
+  }
+  .display.placeholder { color: var(--text-secondary); font-weight: 400; font-size: 0.9375rem; }
+  .keypad {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.625rem;
+    margin-bottom: 1rem;
+  }
+  .key {
+    height: 3.25rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--border);
+    background: var(--canvas);
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background .1s ease;
+  }
+  .key:active { background: var(--surface-2); }
+  .key.func { color: var(--text-secondary); font-size: 0.875rem; font-weight: 500; }
+  .confirm-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.625rem;
+  }
+  .confirm {
+    width: 100%;
+    height: 3.25rem;
+    border: none;
+    border-radius: 0.5rem;
+    background: var(--blue);
+    color: #fff;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: opacity .15s ease;
+  }
+  .confirm.secondary {
+    background: var(--surface);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+  }
+  .confirm:disabled { opacity: .6; cursor: default; }
+  .result {
+    margin-top: 0.875rem;
+    min-height: 3.75rem;
+    padding: 0.625rem 0.75rem;
+    font-size: 0.8125rem;
+    text-align: center;
+    border-radius: 0.5rem;
+    line-height: 1.5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .result.success {
+    background: var(--green-soft);
+    color: var(--green);
+    font-weight: 600;
+  }
+  .result.error {
+    background: var(--red-soft);
+    color: var(--red);
+    font-weight: 600;
+  }
+  .result.info {
+    background: var(--blue-soft);
+    color: var(--blue);
+    font-weight: 600;
+  }
+  .key:focus-visible, .confirm:focus-visible, .settings-btn:focus-visible, .settings-input:focus-visible {
+    outline: 2px solid var(--blue);
+    outline-offset: 2px;
+  }
+  .settings-view { text-align: center; }
+  .settings-view .settings-icon { width: 1.75rem; height: 1.75rem; margin: 0 auto 0.5rem; display: flex; }
+  .settings-view h2 { font-size: 1rem; margin: 0.25rem 0 0.5rem; font-weight: 700; }
+  .settings-desc { font-size: 0.78125rem; color: var(--text-secondary); line-height: 1.5; margin: 0 0 1rem; }
+  .settings-input {
+    width: 100%;
+    height: 3rem;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    padding: 0 0.75rem;
+    font-size: 0.875rem;
+    margin-bottom: 0.75rem;
+    background: var(--surface);
+    color: var(--text-primary);
+  }
+  .cancel-btn {
+    width: 100%;
+    height: 2.5rem;
+    margin-top: 0.25rem;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+    cursor: pointer;
+  }
+  .candidates-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+    max-height: 42vh;
+    overflow-y: auto;
+  }
+  .candidate-btn {
+    width: 100%;
+    padding: 0.75rem 0.875rem;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    background: var(--surface);
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+    font-weight: 700;
+    text-align: left;
+    cursor: pointer;
+  }
+  .candidate-btn:active { background: var(--surface-2); }
+  .candidate-btn .sub {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: var(--text-secondary);
+    margin-top: 0.125rem;
+  }
+  [hidden] { display: none !important; }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --text-primary: #FFFFFF;
+      --text-secondary: rgba(255,255,255,0.65);
+      --canvas: #202020;
+      --surface: #191919;
+      --surface-2: #383836;
+      --border: rgba(255,255,255,0.20);
+      --blue: #5E9FE8;
+      --blue-soft: rgba(94,159,232,0.12);
+      --green: #72BC8F;
+      --green-soft: rgba(114,188,143,0.12);
+      --red: #E97366;
+      --red-soft: rgba(233,115,102,0.12);
+    }
+    .confirm { color: #191919; }
+    .confirm.secondary { color: var(--text-primary); }
+  }
+  #login-screen {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+  .login-card {
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    padding: 32px 28px;
+    width: 100%;
+    max-width: 340px;
+    text-align: center;
+  }
+  .login-card h1 { font-size: 18px; margin: 0 0 4px; display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .login-card h1 .title-icon { width: 18px; height: 18px; display: inline-flex; }
+  .title-icon svg, .settings-btn svg, .header .icon svg, .settings-icon svg { width: 100%; height: 100%; display: block; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .login-card p { font-size: 12px; color: #888; margin: 0 0 20px; }
+  .login-card input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 14px;
+    margin-bottom: 10px;
+  }
+  .login-card button {
+    width: 100%;
+    padding: 10px 12px;
+    background: #6c5ce7;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .login-card button:disabled { background: #ccc; cursor: default; }
+  .login-error { color: #e04b4b; font-size: 12px; margin-top: 10px; min-height: 14px; }
+</style>
+</head>
+<body>
+  <div id="login-screen" style="display:none">
+    <div class="login-card">
+      <h1><span class="title-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg></span>관리자 로그인</h1>
+      <p>학원관리 화면에 접근하려면<br>관리자 비밀번호를 입력하세요</p>
+      <input type="password" id="login-input" placeholder="관리자 비밀번호" autocomplete="current-password">
+      <button id="login-btn" onclick="submitLogin()">로그인</button>
+      <div class="login-error" id="login-error"></div>
+    </div>
+  </div>
+  <div class="kiosk" id="app-screen" style="display:none">
+    <div class="header">
+      <button class="settings-btn" id="logoutBtn" aria-label="로그아웃" title="로그아웃"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg></button>
+      <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg></div>
+      <h1>출결 체크</h1>
+      <p>보호자 또는 학생 전화번호를 입력해주세요</p>
+    </div>
+
+    <div id="mainView">
+      <div class="display placeholder" id="display">전화번호 입력</div>
+      <div class="keypad" id="keypad">
+        <button class="key" data-val="1">1</button>
+        <button class="key" data-val="2">2</button>
+        <button class="key" data-val="3">3</button>
+        <button class="key" data-val="4">4</button>
+        <button class="key" data-val="5">5</button>
+        <button class="key" data-val="6">6</button>
+        <button class="key" data-val="7">7</button>
+        <button class="key" data-val="8">8</button>
+        <button class="key" data-val="9">9</button>
+        <button class="key func" data-val="clear">전체지우기</button>
+        <button class="key" data-val="0">0</button>
+        <button class="key func" data-val="back">⌫</button>
+      </div>
+      <div class="confirm-row">
+        <button class="confirm" id="checkinBtn">등원</button>
+        <button class="confirm secondary" id="checkoutBtn">하원</button>
+      </div>
+      <div class="result" id="result"></div>
+    </div>
+
+    <div id="candidatesView" class="settings-view" hidden>
+      <div class="settings-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></div>
+      <h2>학생을 선택해주세요</h2>
+      <p class="settings-desc">같은 번호로 등록된 학생이 여러 명이에요.<br />해당하는 학생을 선택해주세요.</p>
+      <div class="candidates-list" id="candidatesList"></div>
+      <button class="cancel-btn" id="cancelCandidatesBtn">취소</button>
+    </div>
+  </div>
+
+<script>
+  // 등원/하원 데이터는 더 이상 외부 웹훅(Make.com)으로 보내지 않습니다.
+  // 로그인 때 저장해둔 관리자 키(x-admin-key)로 Supabase Edge Function "kiosk-checkin"을
+  // 바로 호출해서, 학생 매칭·출석 기록·카카오 알림톡 발송까지 한 번에 처리합니다.
+  // 응답 형태:
+  //  - { matched: false } : 일치하는 연락처 없음
+  //  - { needsSelection: true, candidates: [{ registrationId, studentName, className }] }
+  //      : 같은 번호를 쓰는 학생이 여러 명 -> 화면에서 고르면 registrationId를 담아 다시 호출
+  //  - { matched: true, alreadyDone: true, alreadyAt: "14:05" } : 이미 처리된 건(중복 방지)
+  //  - { matched: true, studentName: "홍길동" } : 정상 처리
+
+  let digits = "";
+  let pendingType = null;
+  const display = document.getElementById("display");
+  const resultEl = document.getElementById("result");
+  const checkinBtn = document.getElementById("checkinBtn");
+  const checkoutBtn = document.getElementById("checkoutBtn");
+  const mainView = document.getElementById("mainView");
+  const candidatesView = document.getElementById("candidatesView");
+  const candidatesList = document.getElementById("candidatesList");
+  const logoutBtn = document.getElementById("logoutBtn");
+  const cancelCandidatesBtn = document.getElementById("cancelCandidatesBtn");
+
+  function showMain() {
+    candidatesView.hidden = true;
+    mainView.hidden = false;
+  }
+
+  function showCandidates(candidates, type) {
+    pendingType = type;
+    candidatesList.innerHTML = "";
+    (candidates || []).forEach((c) => {
+      const btn = document.createElement("button");
+      btn.className = "candidate-btn";
+      btn.innerHTML = (c.studentName || "이름 미상") + (c.className ? '<span class="sub">' + c.className + "</span>" : "");
+      btn.addEventListener("click", () => {
+        showMain();
+        runCheckin(pendingType, c.registrationId);
+      });
+      candidatesList.appendChild(btn);
+    });
+    mainView.hidden = true;
+    candidatesView.hidden = false;
+  }
+
+  cancelCandidatesBtn.addEventListener("click", () => {
+    pendingType = null;
+    digits = "";
+    updateDisplay();
+    showMain();
+  });
+
+  function formatPhone(d) {
+    if (!d) return "";
+    if (d.length <= 3) return d;
+    if (d.length <= 7) return d.slice(0, 3) + "-" + d.slice(3);
+    return d.slice(0, 3) + "-" + d.slice(3, 7) + "-" + d.slice(7, 11);
+  }
+
+  function updateDisplay() {
+    if (digits.length === 0) {
+      display.textContent = "전화번호 입력";
+      display.classList.add("placeholder");
+    } else {
+      display.textContent = formatPhone(digits);
+      display.classList.remove("placeholder");
+    }
+  }
+
+  function clearResult() {
+    resultEl.className = "result";
+    resultEl.textContent = "";
+  }
+
+  function showResult(type, msg) {
+    resultEl.className = "result " + type;
+    resultEl.textContent = msg;
+  }
+
+  document.getElementById("keypad").addEventListener("click", (e) => {
+    const btn = e.target.closest(".key");
+    if (!btn) return;
+    const val = btn.dataset.val;
+    if (val === "back") {
+      digits = digits.slice(0, -1);
+    } else if (val === "clear") {
+      digits = "";
+    } else if (digits.length < 11) {
+      digits += val;
+    }
+    updateDisplay();
+    clearResult();
+  });
+
+  async function runCheckin(type, registrationId) {
+    const label = type === "checkin" ? "등원" : "하원";
+    const activeBtn = type === "checkin" ? checkinBtn : checkoutBtn;
+    const originalText = activeBtn.textContent;
+    checkinBtn.disabled = true;
+    checkoutBtn.disabled = true;
+    activeBtn.textContent = "확인 중...";
+    try {
+      const body = { phone: digits, type };
+      if (registrationId) body.registrationId = registrationId;
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/kiosk-checkin`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-key": getAdminKey(),
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+          "apikey": SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify(body),
+      });
+      let data = {};
+      try {
+        data = await res.json();
+      } catch (e) {}
+      if (res.status === 401) {
+        showResult("error", "로그인이 만료되었습니다. 다시 로그인해주세요.");
+        setTimeout(() => {
+          localStorage.removeItem(ADMIN_KEY_STORAGE);
+          showLoginScreen();
+        }, 1200);
+      } else if (res.ok && data.needsSelection) {
+        checkinBtn.disabled = false;
+        checkoutBtn.disabled = false;
+        activeBtn.textContent = originalText;
+        showCandidates(data.candidates, type);
+        return;
+      } else if (res.ok && data.matched && data.alreadyDone) {
+        showResult("info", `이미 ${data.alreadyAt ? data.alreadyAt + "에 " : ""}${label} 처리되었습니다.`);
+      } else if (res.ok && data.matched) {
+        showResult(
+          "success",
+          (data.studentName ? data.studentName + " 학생 " : "") + label + " 처리되었습니다. 학부모님께 알림을 보냈습니다."
+        );
+      } else if (res.ok && data.matched === false) {
+        showResult("error", "일치하는 연락처를 찾을 수 없습니다. 등록된 번호인지 확인해주세요.");
+      } else {
+        showResult("error", data.error || "처리 중 오류가 발생했습니다.");
+      }
+    } catch (err) {
+      showResult("error", "연결에 실패했습니다. 잠시 후 다시 시도해주세요.");
+    }
+    checkinBtn.disabled = false;
+    checkoutBtn.disabled = false;
+    activeBtn.textContent = originalText;
+    digits = "";
+    updateDisplay();
+  }
+
+  function submitAttendance(type) {
+    if (digits.length < 9) {
+      showResult("error", "전화번호를 정확히 입력해주세요.");
+      return;
+    }
+    runCheckin(type);
+  }
+
+  checkinBtn.addEventListener("click", () => submitAttendance("checkin"));
+  checkoutBtn.addEventListener("click", () => submitAttendance("checkout"));
+
+  updateDisplay();
+
+  // ============ 공용 로그인 (admin.html과 같은 localStorage 키를 사용해 한 번만 로그인하면 됩니다) ============
+  const SUPABASE_URL = "https://twczhsxybkcvjkdfdxvs.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3Y3poc3h5YmtjdmprZGZkeHZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyOTcwMDQsImV4cCI6MjEwMzg3MzAwNH0.t7Ltb_iSYqE4gHSoGSm-OlpiLjGqIcgrhzGJ-t56EDc";
+  const ADMIN_KEY_STORAGE = "admin_key";
+  function getAdminKey() { return localStorage.getItem(ADMIN_KEY_STORAGE) || ""; }
+  function showLoginScreen(errorMsg) {
+    document.getElementById("login-screen").style.display = "flex";
+    document.getElementById("app-screen").style.display = "none";
+    document.getElementById("login-error").textContent = errorMsg || "";
+    document.getElementById("login-input").value = "";
+    setTimeout(() => document.getElementById("login-input").focus(), 50);
+  }
+  function showAppScreen() {
+    document.getElementById("login-screen").style.display = "none";
+    document.getElementById("app-screen").style.display = "flex";
+    showMain();
+  }
+  logoutBtn.addEventListener("click", () => {
+    if (!confirm("로그아웃 하시겠습니까?")) return;
+    localStorage.removeItem(ADMIN_KEY_STORAGE);
+    digits = "";
+    updateDisplay();
+    showLoginScreen();
+  });
+  async function submitLogin() {
+    const input = document.getElementById("login-input");
+    const key = input.value.trim();
+    const btn = document.getElementById("login-btn");
+    const errEl = document.getElementById("login-error");
+    if (!key) { errEl.textContent = "비밀번호를 입력하세요."; return; }
+    btn.disabled = true;
+    btn.textContent = "확인 중...";
+    errEl.textContent = "";
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/list-students`, {
+        headers: {
+          "x-admin-key": key,
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+          "apikey": SUPABASE_ANON_KEY,
+        },
+      });
+      if (res.status === 401) {
+        errEl.textContent = "비밀번호가 올바르지 않습니다.";
+        btn.disabled = false;
+        btn.textContent = "로그인";
+        return;
+      }
+      if (!res.ok) throw new Error(`서버 오류: ${res.status}`);
+      localStorage.setItem(ADMIN_KEY_STORAGE, key);
+      showAppScreen();
+    } catch (err) {
+      errEl.textContent = "로그인에 실패했습니다: " + err.message;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "로그인";
+    }
+  }
+  document.getElementById("login-input").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submitLogin();
+  });
+
+  if (getAdminKey()) {
+    showAppScreen();
+  } else {
+    showLoginScreen();
+  }
+</script>
+</body>
+</html>

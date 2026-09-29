@@ -1,0 +1,25 @@
+name: Sync Attendance (incremental)
+
+on:
+  schedule:
+    # 매시간 15분에 실행 (UTC 기준). 출석 원자료를 자주 최신화해서, 자동화 웹훅을 놓친 경우에도
+    # 늦지 않게 반영되도록 합니다.
+    - cron: '15 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call sync-attendance (mode=incremental)
+        run: |
+          set -e
+          curl -sS -X POST "https://${SUPABASE_PROJECT_ID}.supabase.co/functions/v1/sync-attendance" \
+            -H "apikey: ${SUPABASE_ANON_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+            -H "x-admin-key: ${{ secrets.ADMIN_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -d '{"mode":"incremental"}'
+        env:
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}

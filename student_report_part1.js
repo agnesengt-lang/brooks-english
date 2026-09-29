@@ -1,0 +1,953 @@
+// ===================== 목업 데이터 =====================
+// TODO(아이콘 소스 규칙): 일부 아이콘은 HTML에 직접 박힌 이모지이고, 일부는 노션 페이지 아이콘을 가져와야 함. 추후 아이콘 소스를 하나의 변수/규칙으로 통일하는 규칙을 정해야 함 (아직 미정).
+let STUDENT = null
+let DATA_ERROR = null
+
+const SUPABASE_URL = "https://twczhsxybkcvjkdfdxvs.supabase.co"
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3Y3poc3h5YmtjdmprZGZkeHZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyOTcwMDQsImV4cCI6MjEwMzg3MzAwNH0.t7Ltb_iSYqE4gHSoGSm-OlpiLjGqIcgrhzGJ-t56EDc"
+
+// 반마다 서로 다른 색상 이모지를 안정적으로 배정한다 (같은 반 이름이면 항상 같은 색).
+// 실제 반 색상 데이터가 서버에서 내려오면 이 함수를 그 값으로 교체하면 된다.
+const CLASS_COLOR_EMOJIS = ["🟣", "🔵", "🟢", "🟠", "🔴", "🟡", "🟤", "⚪"]
+function pickClassColorEmoji(seed) {
+  const str = String(seed || "")
+  let hash = 0
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash * 31 + str.charCodeAt(i)) >>> 0
+  }
+  return CLASS_COLOR_EMOJIS[hash % CLASS_COLOR_EMOJIS.length]
+}
+function seedHash(seed) {
+  const str = String(seed || "")
+  let hash = 0
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash * 31 + str.charCodeAt(i)) >>> 0
+  }
+  return hash
+}
+// 통합 시간표에서 클래스마다 서로 다른 색상 배경을 안정적으로 배정한다 (같은 클래스명이면 항상 같은 색).
+const CLASS_COLOR_PALETTE = [
+  { bg: "#f3e8fd", fg: "#7c3aed" },
+  { bg: "#dbeafe", fg: "#1d4ed8" },
+  { bg: "#dcfce7", fg: "#15803d" },
+  { bg: "#ffedd5", fg: "#c2410c" },
+  { bg: "#fee2e2", fg: "#b91c1c" },
+  { bg: "#fef9c3", fg: "#a16207" },
+  { bg: "#ede4da", fg: "#78350f" },
+  { bg: "#e2e8f0", fg: "#475569" },
+]
+function pickClassColorPalette(seed) {
+  return CLASS_COLOR_PALETTE[seedHash(seed) % CLASS_COLOR_PALETTE.length]
+}
+// 노션 "진행상태" 원본값은 "진행 중" / "완료" / "다음 교재"처럼 공백·이모지가 들어갈 수 있어서,
+// 공백과 이모지를 지우고 UI 필터 값(진행중 / 완료 / 예정)으로 매핑한다.
+function normalizeBookStatus(rawStatus) {
+  const s = String(rawStatus || "")
+    .replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, "")
+    .replace(/\s+/g, "")
+  if (!s) return "진행중"
+  if (s.includes("진행")) return "진행중"
+  if (s.includes("완료") || s.includes("종료")) return "완료"
+  if (s.includes("다음") || s.includes("예정") || s.includes("대기")) return "예정"
+  return s
+}
+// 과제 상태에 따른 배지 색상 톤 (제출: 파란색 / 미제출: 빨간색)
+function homeworkPillTone(status) {
+  const s = String(status || "").trim()
+  if (s === "제출") return "tone-submit"
+  if (s === "미제출") return "tone-late"
+  return ""
+}
+// 평가 정답률에 따른 배지 색상 톤 (60미만 빨강 / 70미만 주황 / 80미만 노랑 / 90미만 초록 / 100미만 파란 / 100 파란+이모지)
+function scorePillTone(correct, total) {
+  if (!total) return ""
+  const pct = Math.round((correct / total) * 100)
+  if (pct >= 100) return "tone-perfect"
+  if (pct >= 90) return "tone-blue"
+  if (pct >= 80) return "tone-green"
+  if (pct >= 70) return "tone-yellow"
+  if (pct >= 60) return "tone-orange"
+  return "tone-red"
+}
+// 실제 점수(정답률)를 "N점 (correct/total)" 형식으로 표기한다. (100점이라고 별도 아이콘을 붙이지 않는다.)
+function scorePillText(correct, total) {
+  if (!total) return `정답 ${correct ?? 0} / 0`
+  const pct = Math.round(((correct ?? 0) / total) * 100)
+  return `${pct}점 (${correct ?? 0}/${total})`
+}
+// 학습기록 카드의 단원·내용은 각각 독립된 줄로 표시한다.
+// 단원은 "1-1." 같은 번호 패턴 앞에서 잘라 하나씩 별도 줄(불릿)로 보여준다 (단원이 하나뿐이어도 동일하게 처리).
+// 마감/날짜에도 같은 불릿 스타일을 쓰고, 내용은 원문만 그대로 보여준다.
+function renderLogMetaRows(unit, note, extraRows = []) {
+  const unitRow = unit
+    ? unit
+        .split(/(?=\d+-\d+\.)/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((part) => `<div class="log-context">${esc(`• ${part}`)}</div>`)
+        .join("")
+    : ""
+  // 선생님이 노트에 줄마다 앞에 공백/불릿을 직접 타이핑해두는 경우가 있어(예: "  • 보강1"),
+  // 단원 목록 불릿과 들여쓰기가 안 맞아 보인다. 줄마다 앞뒤 공백을 정리해 항상 같은 들여쓰기로 보이게 한다.
+  const normalizedNote = note
+    ? note
+        .split("\n")
+        .map((line) => line.trim())
+        .join("\n")
+    : ""
+  const noteRow = normalizedNote ? `<div class="log-note">${esc(normalizedNote)}</div>` : ""
+  const extras = extraRows
+    .filter(Boolean)
+    .map((row) => `<div class="log-context">${esc(`• ${row}`)}</div>`)
+    .join("")
+  return unitRow + noteRow + extras
+}
+// 학습기록 카드의 본문(사진/노션 기록)은 기본으로 접어두고, 메타정보 영역(.log-meta) 안에
+// 겹쳐 떠 있는 화살표 아이콘을 눌러야 펼쳐진다. 화살표는 메타정보 우측 끝에 고정되어 있어
+// 펼치기 전/후 위치가 바뀌지 않고, 카드 높이에도 영향을 주지 않는다. 펼치면(.open) 화살표만 뒤집힌다.
+function toggleLogExtra(btn) {
+  const metaBox = btn.closest(".log-meta")
+  const extra = metaBox && metaBox.nextElementSibling
+  if (!extra) return
+  const show = !extra.classList.contains("show")
+  extra.classList.toggle("show", show)
+  btn.classList.toggle("open", show)
+}
+// 노션 학습기록 "페이지 본문"을 피드용 부록으로 정리한다.
+// Edge Function 이 body: [{ type: "text"|"image"|"video"|"divider", text?, spans?, style?, ... }] 로
+// 내려준다. spans는 [{ text, bold, italic, strikethrough, underline, code, color, href }] 형태의
+// 인라인 서식 조각들이다 (없으면 text를 그대로 서식 없이 보여준다).
+function normalizeFeedSpans(rawSpans, fallbackText) {
+  if (!Array.isArray(rawSpans) || !rawSpans.length) {
+    return fallbackText ? [{ text: fallbackText }] : []
+  }
+  return rawSpans
+    .map((s) => {
+      if (!s) return null
+      const t = String(s.text || "")
+      if (!t) return null
+      return {
+        text: t,
+        bold: !!s.bold,
+        italic: !!s.italic,
+        strikethrough: !!s.strikethrough,
+        underline: !!s.underline,
+        code: !!s.code,
+        color: s.color ? String(s.color) : "",
+        href: s.href ? String(s.href) : "",
+      }
+    })
+    .filter(Boolean)
+}
+function normalizeFeedBody(rawBody) {
+  if (!Array.isArray(rawBody)) return []
+  return rawBody
+    .map((b) => {
+      if (!b) return null
+      if (b.type === "image" && b.url) {
+        return { type: "image", url: String(b.url), caption: String(b.caption || "") }
+      }
+      if (b.type === "video" && b.url) {
+        return { type: "video", url: String(b.url), caption: String(b.caption || "") }
+      }
+      if (b.type === "divider") return { type: "divider" }
+      if (b.type === "table" && Array.isArray(b.rows) && b.rows.length) {
+        return {
+          type: "table",
+          hasColumnHeader: !!b.hasColumnHeader,
+          hasRowHeader: !!b.hasRowHeader,
+          rows: b.rows.map((row) => (Array.isArray(row) ? row.map((cell) => normalizeFeedSpans(cell, "")) : [])),
+        }
+      }
+      const t = String(b.text || "").trim()
+      if (!t) return null
+      return {
+        type: "text",
+        text: t,
+        style: String(b.style || ""),
+        spans: normalizeFeedSpans(b.spans, t),
+        checked: !!b.checked,
+        icon: b.icon ? String(b.icon) : "",
+        language: b.language ? String(b.language) : "",
+      }
+    })
+    .filter(Boolean)
+}
+// 인라인 서식(spans)을 안전하게 이스케이프한 HTML로 조립한다 (굵게/기울임/취소선/밑줄/인라인
+// 코드/색상/링크). esc()로 사용자 텍스트를 이스케이프한 뒤에만 태그를 씌우므로 XSS 걱정이 없다.
+function renderFeedSpans(spans) {
+  return (spans || [])
+    .map((s) => {
+      let html = esc(s.text).replace(/\n/g, "<br>")
+      if (s.code) html = `<code>${html}</code>`
+      if (s.bold) html = `<b>${html}</b>`
+      if (s.italic) html = `<i>${html}</i>`
+      if (s.strikethrough) html = `<s>${html}</s>`
+      if (s.underline) html = `<u>${html}</u>`
+      if (s.color) html = `<span class="feed-color-${esc(s.color).replace(/[^a-z_]/g, "")}">${html}</span>`
+      if (s.href) html = `<a href="${esc(s.href)}" target="_blank" rel="noopener noreferrer">${html}</a>`
+      return html
+    })
+    .join("")
+}
+
+// 유튜브/비메오 링크는 iframe 임베드로, 그 외(직접 업로드된 mp4 등)는 <video> 태그로 재생한다.
+function buildFeedVideoHtml(vid) {
+  const url = String(vid.url || "")
+  const yt = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([\w-]{6,})/)
+  const vimeo = url.match(/vimeo\.com\/(\d+)/)
+  let inner = ""
+  if (yt) {
+    inner = `<iframe src="https://www.youtube.com/embed/${esc(yt[1])}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`
+  } else if (vimeo) {
+    inner = `<iframe src="https://player.vimeo.com/video/${esc(vimeo[1])}" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`
+  } else {
+    inner = `<video src="${esc(url)}" controls preload="metadata"></video>`
+  }
+  return `<div class="feed-video">${inner}${vid.caption ? `<div class="feed-video-caption">${esc(vid.caption)}</div>` : ""}</div>`
+}
+
+// 피드 본문 렌더링: 글 + 사진을 인스타그램 피드처럼 보여준다.
+// 이미지 1장은 크게, 2장 이상은 그리드로 배치한다.
+// 노션 블록 스타일별 렌더링. 글머리/번호 목록은 연속된 항목을 하나의 <ul>/<ol>로 묶어야
+// 진짜 목록처럼 보이므로, 목록 버퍼를 따로 두고 다른 타입이 나오면 그때 한 번에 닫는다.
+function buildFeedBodyHtml(body) {
+  const items = normalizeFeedBody(body)
+  if (!items.length) return ""
+  const parts = []
+  let imageBuffer = []
+  let listBuffer = []
+  let listTag = ""
+  const flushImages = () => {
+    if (!imageBuffer.length) return
+    const cls = imageBuffer.length === 1 ? "feed-images single" : "feed-images"
+    parts.push(`<div class="${cls}">${imageBuffer
+      .map((img) => `<figure class="feed-figure"><img class="feed-img" src="${esc(img.url)}" loading="lazy" onclick="openFeedImage('${esc(img.url).replace(/'/g, "&#39;")}')" />${img.caption ? `<figcaption>${esc(img.caption)}</figcaption>` : ""}</figure>`)
+      .join("")}</div>`)
+    imageBuffer = []
+  }
+  const flushList = () => {
+    if (!listBuffer.length) return
+    parts.push(`<${listTag} class="feed-list">${listBuffer.join("")}</${listTag}>`)
+    listBuffer = []
+    listTag = ""
+  }
+  items.forEach((it) => {
+    if (it.type === "image") {
+      flushList()
+      imageBuffer.push(it)
+      return
+    }
+    if (it.type === "video") {
+      flushImages()
+      flushList()
+      parts.push(buildFeedVideoHtml(it))
+      return
+    }
+    if (it.type === "divider") {
+      flushImages()
+      flushList()
+      parts.push(`<hr class="feed-divider">`)
+      return
+    }
+    if (it.type === "table") {
+      flushImages()
+      flushList()
+      const rows = it.rows || []
+      const rowsHtml = rows
+        .map((cells, ri) => {
+          const isHeaderRow = it.hasColumnHeader && ri === 0
+          const cellsHtml = cells
+            .map((cellSpans, ci) => {
+              const isHeaderCol = it.hasRowHeader && ci === 0
+              const tag = isHeaderRow || isHeaderCol ? "th" : "td"
+              return `<${tag}>${renderFeedSpans(cellSpans)}</${tag}>`
+            })
+            .join("")
+          return `<tr>${cellsHtml}</tr>`
+        })
+        .join("")
+      parts.push(`<div class="feed-table-wrap"><table class="feed-table">${rowsHtml}</table></div>`)
+      return
+    }
+    flushImages()
+    const style = it.style || ""
+    if (style === "bulleted_list_item" || style === "numbered_list_item") {
+      const tag = style === "bulleted_list_item" ? "ul" : "ol"
+      if (listTag && listTag !== tag) flushList()
+      listTag = tag
+      listBuffer.push(`<li>${renderFeedSpans(it.spans)}</li>`)
+      return
+    }
+    flushList()
+    if (style === "heading_1") parts.push(`<div class="feed-heading feed-h1">${renderFeedSpans(it.spans)}</div>`)
+    else if (style === "heading_2") parts.push(`<div class="feed-heading feed-h2">${renderFeedSpans(it.spans)}</div>`)
+    else if (style === "heading_3") parts.push(`<div class="feed-heading feed-h3">${renderFeedSpans(it.spans)}</div>`)
+    else if (style === "heading_4") parts.push(`<div class="feed-heading feed-h4">${renderFeedSpans(it.spans)}</div>`)
+    else if (style === "quote") parts.push(`<div class="feed-quote">${renderFeedSpans(it.spans)}</div>`)
+    else if (style === "to_do") parts.push(`<div class="feed-todo${it.checked ? " checked" : ""}"><span class="feed-todo-box">${it.checked ? "☑" : "☐"}</span><span>${renderFeedSpans(it.spans)}</span></div>`)
+    else if (style === "callout") parts.push(`<div class="feed-callout">${it.icon ? `<span class="feed-callout-icon">${esc(it.icon)}</span>` : ""}<span>${renderFeedSpans(it.spans)}</span></div>`)
+    else if (style === "code") parts.push(`<pre class="feed-code"><code>${esc(it.text)}</code></pre>`)
+    // 옛 데이터(마이그레이션 전 style="heading"/"bullet")와도 호환되게 유지한다.
+    else if (style === "heading") parts.push(`<div class="feed-heading feed-h3">${renderFeedSpans(it.spans)}</div>`)
+    else if (style === "bullet") parts.push(`<div class="feed-bullet">${renderFeedSpans(it.spans)}</div>`)
+    else parts.push(`<div class="feed-para">${renderFeedSpans(it.spans)}</div>`)
+  })
+  flushImages()
+  flushList()
+  return `<div class="feed-body">${parts.join("")}</div>`
+}
+
+// 피드 이미지 탭 → 전체화면 뷰어
+function openFeedImage(url) {
+  if (!url) return
+  const layer = document.createElement("div")
+  layer.className = "feed-lightbox"
+  layer.innerHTML = `<img src="${esc(url)}" />`
+  layer.onclick = () => layer.remove()
+  document.body.appendChild(layer)
+}
+
+// [FIX, 2026-09-19] "수업일시" 같은 속성은 UTC 순간(instant)으로 내려온다(예: "2026-09-18T23:11:00.000Z").
+// 오후/저녁 수업은 KST로 변환해도 같은 날짜라 문제가 없었지만, 키오스크 보강 체크인처럼 자정
+// 근처(KST 00시~09시)에 만들어진 기록은 그냥 앞 10자만 자르면(UTC 기준) 하루 전 날짜로 표시된다
+// (캘린더 칸이 비어보이거나 다른 날짜와 겹쳐 보이는 문제로 나타남). Asia/Seoul 기준으로 정확히
+// 변환해서 날짜를 뽑는다.
+function isoToKstDate(iso) {
+  if (!iso) return null
+  try {
+    return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }).format(new Date(iso))
+  } catch (_e) {
+    return null
+  }
+}
+
+const LEADING_EMOJI_RE = /^(\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic})*)\s*/u
+function splitClassNameEmoji(rawClassName) {
+  const str = String(rawClassName || "").trim()
+  const match = str.match(LEADING_EMOJI_RE)
+  if (match) {
+    return { emoji: match[1], name: str.slice(match[0].length).trim() }
+  }
+  return { emoji: "", name: str }
+}
+
+// Supabase RPC 응답(같은 학생의 모든 등록을 registrations[] 배열로 집계)을 앞단의 UI가 사용하는
+// STUDENT/registrations[] 형태로 변환합니다.
+function mapRegistration(reg) {
+  return {
+    token: reg.access_token || "",
+    // [NEW, 2026-09-19] 캘린더 탭의 "동기화" 버튼이 sync-report-cache를 호출할 때 필요하다.
+    registration_id: reg.registration_id || null,
+    emoji: splitClassNameEmoji(reg.class_name).emoji || pickClassColorEmoji(splitClassNameEmoji(reg.class_name).name),
+    class_name: splitClassNameEmoji(reg.class_name).name || reg.class_name || "",
+    // 변경 후 (실제 값 반영)
+    status: reg.status === "수강 종료" ? "수강종료"
+      : reg.status === "수강 대기" ? "수강대기"
+      : "수강중",
+    start: reg.start_date || null,
+    end: reg.end_date || null,
+    teacher: reg.teacher_name || "",
+    class_mode: reg.class_mode || "",
+    schedule: (reg.schedule || []).map((s) => ({ day: s.day, start: s.start, end: s.end })),
+    books: (reg.books || []).map((b) => ({ title: b.title || "", progress: b.progress ?? 0, status: normalizeBookStatus(b.status), cover: b.cover || "", pages: b.pages ?? null, units: b.units || [] })),
+    attendance_summary: reg.attendance_summary || { present: 0, absent: 0, makeup: 0 },
+    attendance_rows: (reg.attendance_rows || []).map((a) => {
+      const rawDate = a.iso || a.date_iso || (typeof a.date === "string" && /^\d{4}-\d{2}-\d{2}/.test(a.date) ? a.date : null)
+      // [FIX] 백엔드가 시간/타임존까지 포함된 ISO 문자열을 보낼 수 있어, 항상 앞 10자(YYYY-MM-DD)로 정규화한다.
+      // 정규화하지 않으면 캘린더(slice 비교)는 매칭되지만 일일 보고서(=== 비교)는 매칭되지 않는 문제가 생긴다.
+      // [FIX, 2026-09-19] 위 "정규화"가 실제로는 UTC 기준 slice라서, 자정 근처(KST 00시~09시)에
+      // 생성된 기록은 하루 전 날짜로 잘못 표시됐다 (예: 키오스크 보강 체크인). isoToKstDate로
+      // Asia/Seoul 기준 날짜를 우선 사용하고, 실패하면 기존 방식(UTC slice)으로 되돌아간다.
+      const kstDate = isoToKstDate(rawDate)
+      return { date: kstDate || (rawDate ? String(rawDate).slice(0, 10) : null), weekday: a.weekday || "", status: a.status || "" }
+    }),
+    study_logs: (reg.study_logs || []).map((s) => ({ book: s.book || "", range: s.range || "", unit: s.unit || "", date: s.iso || null, note: s.note || "", body: normalizeFeedBody(s.body) })),
+    // classDate(수업일)는 백엔드가 h.iso로 내려주지만 지금까지 프론트에서 버려지고 있었다. "다음과제"를
+    // 마감일이 아니라 수업일(그 과제를 실제로 내준 날) 기준으로 판단하려면 이 값이 있어야 한다.
+    homework: (reg.homework || []).map((h) => ({ title: h.title || "", book: h.book || "", range: h.range || "", unit: h.unit || "", note: h.note || "", due: h.due_iso || null, classDate: isoToKstDate(h.iso) || null, status: h.status || "미제출" })),
+    homework_days: (reg.homework_days || []).map((h) => ({ date: h.date || null, status: h.status || "미완료", submitted: h.submitted ?? 0, total: h.total ?? 0 })),
+    tests: (reg.tests || []).map((t) => ({ title: t.title || "", book: t.book || "", range: t.range || "", unit: t.unit || "", note: t.note || "", date: t.iso || null, correct: t.correct ?? 0, total: t.total ?? 0 })),
+    teacher_comments: (reg.teacher_comments || []).map((c) => ({ text: c.text || "", date: c.iso || null, by: c.by || "" })),
+    // 주간/월간 보고서: 보고서(학원) DB 자체의 "선생님 한마디"를 보고서 구분·학습 기간과 함께 보관한다.
+    report_comments: (reg.report_comments || []).map((c) => ({ kind: c.kind || "", start: c.start || null, end: c.end || c.start || null, comment: c.comment || "" })),
+  }
+}
+
+function mapReportToStudent(r) {
+  const regs = Array.isArray(r.registrations) && r.registrations.length ? r.registrations : [r]
+  return {
+    academy_name: "",
+    student_name: r.student_name || "",
+    school: (r.school_grade || "").split(" ")[0] || "",
+    grade: (r.school_grade || "").split(" ").slice(1).join(" ") || "",
+    gender: "",
+    birthdate: "",
+    siblings: (r.siblings || []).map((sib) => ({ name: sib.name || "", token: sib.access_token || null })),
+    student_phone: r.student_phone || "",
+    mother_phone: r.mother_phone || "",
+    father_phone: r.father_phone || "",
+    primary_contact: r.primary_contact || "",
+    notices: (r.notices || []).map((n) => ({ date: n.date || null, title: n.title || "", category: n.category || "" })),
+    registrations: regs.map(mapRegistration),
+  }
+}
+
+async function loadReportFromServer() {
+  const token = new URLSearchParams(window.location.search).get("token")
+  if (!token) {
+    DATA_ERROR = "링크가 올바르지 않아요. 받으신 링크를 다시 확인해주세요"
+    return
+  }
+  try {
+    const commonHeaders = {
+      "apikey": SUPABASE_ANON_KEY,
+      "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+      "Content-Type": "application/json",
+    }
+    const [fastRes, detailRes] = await Promise.all([
+      fetch(`${SUPABASE_URL}/functions/v1/get-report-fast`, {
+        method: "POST",
+        headers: commonHeaders,
+        body: JSON.stringify({ token }),
+      }),
+      fetch(`${SUPABASE_URL}/functions/v1/get-report-detail`, {
+        method: "POST",
+        headers: commonHeaders,
+        body: JSON.stringify({ token }),
+      }),
+    ])
+    if (!fastRes.ok) throw new Error(`HTTP ${fastRes.status}`)
+    if (!detailRes.ok) throw new Error(`HTTP ${detailRes.status}`)
+    const fast = await fastRes.json()
+    const detail = await detailRes.json()
+    const row = { ...fast, ...detail, access_token: fast.token }
+    if (Array.isArray(row.registrations) && row.registrations.length) {
+      row.registrations = row.registrations.map((r) => (
+        r.access_token === fast.token
+          ? {
+              ...r,
+              attendance_summary: detail.attendance_summary,
+              attendance_rows: detail.attendance_rows,
+              study_logs: detail.study_logs,
+              homework: detail.homework,
+              homework_days: detail.homework_days,
+              tests: detail.tests,
+              teacher_comments: detail.teacher_comments,
+              report_comments: detail.report_comments,
+            }
+          : r
+      ))
+    }
+    if (!row) throw new Error("no data")
+    STUDENT = mapReportToStudent(row)
+    if (STUDENT.student_name) {
+      document.title = `${STUDENT.student_name} 학습 리포트`
+    }
+  } catch (e) {
+    DATA_ERROR = "데이터를 불러오는 중 문제가 생겼어요. 잠시 후 다시 시도해주세요"
+  }
+}
+
+// ===================== 상태 =====================
+const app = document.getElementById("app")
+let view = "intro" // "intro" | "detail" | "schedule" | "book"
+let selectedToken = null
+let selectedBookTitle = null
+let scheduleMonthIndex = 0
+let expandedSection = null // "basic" | "registrations" | null
+let selectedCalDate = null
+let regTab = "books" // "books" | "calendar" | "study" | "report"
+let calMode = "attendance" // "attendance" | "homework"
+let regCalMonthIndex = 0
+// [NEW, 2026-09-19] 우측 하단 동기화 버튼(FAB) 상태. 캘린더 탭에만 있던 버튼을 화면 전역으로 옮기면서,
+// 특정 등록의 캘린더 상태가 아니라 앱 전체 상태로 관리한다 (10-12 참고).
+let globalSyncing = false
+let globalSyncMessage = ""
+let reportPeriod = "week" // "week" | "month" | "day"
+let reportOffset = 0 // 0 = current period, 1 = previous period, etc.
+let reportDayDate = null // used when reportPeriod === "day"
+let bookStatusTab = "진행중" // "진행중" | "완료" | "예정"
+let studyLogFilter = "전체" // "전체" | "학습" | "과제" | "평가" -- 학습기록 탭 필터(디자인 통일 목적, 기본값은 전체)
+let bookLogFilter = "전체" // "전체" | "학습" | "과제" | "평가" -- 교재 상세 페이지 학습기록 필터(학습기록 탭과 별도 상태로 관리)
+// Computes today date in Asia/Seoul time (not UTC) so it is correct before 9am KST.
+function todayIsoInSeoul() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date())
+  return parts
+}
+const MOCK_TODAY = todayIsoInSeoul()
+// [FIX] Bound how far back the attendance calendar / schedule calendar / report
+// view can navigate. Keep this in sync with the 6-month sinceIso window computed
+// server-side in _shared/syncStudentReport.ts so users cannot page into months that
+// have no data (which is what made the calendar look like it scrolls forever).
+const MAX_LOOKBACK_MONTHS = 6
+
+function esc(s) {
+  if (s === null || s === undefined) return ""
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]))
+}
+
+function openMenu() { renderMenuBody(); document.getElementById("menu").classList.add("active") }
+function closeMenu() { document.getElementById("menu").classList.remove("active") }
+
+function renderMenuBody() {
+  document.getElementById("menu-body").innerHTML = `
+    <div class="menu-item-header ${expandedSection === "basic" ? "active" : ""}" onclick="toggleSection('basic')">
+      <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg></span><span style="flex:1">기본정보</span><span class="menu-item-chevron">${expandedSection === "basic" ? `<svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="18 15 12 9 6 15"></polyline></svg>` : `<svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>`}</span>
+    </div>
+    ${expandedSection === "basic" ? `<div class="menu-item-body">${basicInfoBodyHtml()}</div>` : ""}
+    <div class="menu-item-header ${expandedSection === "registrations" ? "active" : ""}" onclick="toggleSection('registrations')">
+      <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg></span><span style="flex:1">등록 클래스</span><span class="menu-item-chevron">${expandedSection === "registrations" ? `<svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="18 15 12 9 6 15"></polyline></svg>` : `<svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>`}</span>
+    </div>
+    ${expandedSection === "registrations" ? `<div class="menu-item-body">${registrationsBodyHtml()}</div>` : ""}
+  `
+}
+function toggleSection(name) {
+  expandedSection = expandedSection === name ? null : name
+  renderMenuBody()
+}
+
+function openRegistration(token) {
+  selectedToken = token
+  regTab = "books"
+  bookStatusTab = "진행중"
+  selectedBookTitle = null
+  calMode = "attendance"
+  regCalMonthIndex = 0
+  reportPeriod = "day"
+  reportOffset = 0
+  reportDayDate = null
+  view = "detail"
+  renderApp()
+  window.scrollTo({ top: 0 })
+}
+
+function openBookStudy(title) {
+  selectedBookTitle = normBookTitle(title)
+  bookLogFilter = "전체"
+  view = "book"
+  renderApp()
+  window.scrollTo({ top: 0 })
+}
+function closeBookDetail() {
+  view = "detail"
+  selectedBookTitle = null
+  renderApp()
+  window.scrollTo({ top: 0 })
+}
+function normBookTitle(v) {
+  return String(v || "").trim()
+}
+function regTabsList() {
+  return [
+    { id: "books", icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>`, label: "교재" },
+    { id: "calendar", icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>`, label: "캘린더" },
+    { id: "study", icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>`, label: "학습기록" },
+    { id: "report", icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>`, label: "보고서" },
+  ]
+}
+function regTabbarHtml(activeId, fromBook) {
+  const tabs = regTabsList()
+  return `
+    <div class="reg-tabbar">
+      ${tabs.map((t) => `<button class="reg-tab-btn ${activeId === t.id ? "active" : ""}" onclick="${fromBook ? `closeBookDetail();setRegTab('${t.id}')` : `setRegTab('${t.id}')`}"><span class="tab-icon">${t.icon}</span>${esc(t.label)}</button>`).join("")}
+    </div>
+  `
+}
+function renderBookDetail() {
+  const r = currentReg()
+  if (!r || !selectedBookTitle) return renderDetail()
+  const books = r.books || []
+  const targetTitle = normBookTitle(selectedBookTitle)
+  const book = books.find((b) => normBookTitle(b.title) === targetTitle) || {}
+  const items = []
+  ;((r.study_logs) || []).filter((l) => normBookTitle(l.book) === targetTitle).forEach((l) => items.push({
+    type: "학습", icon: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>`, date: l.date, book: l.book, range: l.range, unit: l.unit, note: l.note, pill: null, photo: l.photo, body: l.body,
+  }))
+  ;((r.homework) || []).filter((h) => normBookTitle(h.book) === targetTitle).forEach((h) => items.push({
+    type: "과제", icon: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>`, date: h.classDate || h.due, due: h.due, classDate: h.classDate, book: h.book, range: h.range, unit: h.unit, note: h.note || h.title, pill: h.status, pillTone: homeworkPillTone(h.status), photo: null, body: null,
+  }))
+  ;((r.tests) || []).filter((t) => normBookTitle(t.book) === targetTitle).forEach((t) => items.push({
+    type: "평가", icon: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>`, date: t.date, book: t.book, range: t.range, unit: t.unit, note: t.note || t.title, pill: scorePillText(t.correct ?? 0, t.total ?? 0), pillTone: scorePillTone(t.correct ?? 0, t.total ?? 0), photo: null, body: null,
+  }))
+  const sorted = items.slice().sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+  const studiedUnitKeys = new Set()
+  const studiedUnitList = []
+  items.slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)).forEach((l) => {
+    if (!l.unit) return
+    l.unit.split(/(?=\d+-\d+\.)/).map((s) => s.trim()).filter(Boolean).forEach((part) => {
+      const m = part.match(/^(\d+-\d+)/)
+      const key = m ? m[1] : part
+      studiedUnitKeys.add(key)
+      if (!studiedUnitList.some((u) => u.text === part)) studiedUnitList.push({ text: part, done: true })
+    })
+  })
+  const unitSortKey = (t) => {
+    const m = t.match(/^(\d+)-(\d+)/)
+    return m ? Number(m[1]) * 1000 + Number(m[2]) : 999999
+  }
+  const unitList = ((book.units && book.units.length)
+    ? book.units.map((u) => {
+        const m = u.match(/^(\d+-\d+)/)
+        const key = m ? m[1] : u
+        return { text: u, done: studiedUnitKeys.has(key) }
+      })
+    : studiedUnitList
+  ).slice().sort((a, b) => unitSortKey(a.text) - unitSortKey(b.text))
+  return `
+    <div class="reg-detail-page">
+      <div class="reg-header-bar">
+        <div class="reg-header-top">
+          <button class="reg-back-btn" onclick="closeBookDetail()" aria-label="뒤로가기"><svg class="header-icon" viewBox="0 0 24 24" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg></button>
+          <div class="reg-breadcrumb">
+            <span class="crumb" onclick="goIntro()">${esc(STUDENT.student_name)}</span>
+            <span class="crumb-sep">›</span>
+            <span class="crumb" onclick="closeBookDetail()">${esc(r.class_name)}</span>
+            <span class="crumb-sep">›</span>
+            <span class="crumb" onclick="closeBookDetail()">교재</span>
+            <span class="crumb-sep">›</span>
+            <span class="crumb current">${esc(selectedBookTitle)}</span>
+          </div>
+        </div>
+        <div class="reg-cover-wrap">
+          <div class="reg-cover-img">${book.cover ? `<img src="${esc(book.cover)}" alt="${esc(selectedBookTitle)}">` : `<span class="cover-fallback-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></span>`}</div>
+        </div>
+        <div class="reg-head-row">
+          <div class="reg-emoji"><span class="cover-fallback-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></span></div>
+          <div class="reg-title">${esc(selectedBookTitle)}</div>
+        </div>
+        <div class="reg-sub-badges">
+          <span class="sub-badge">${esc(book.status || "진행중")}</span>
+          ${book.progress != null ? `<span class="sub-badge">진도 ${book.progress}%</span>` : ""}
+        </div>
+      </div>
+      <div class="reg-tab-content">
+        <div class="feed-narrow-wrap">
+        <h2><span class="page-title-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></span>${esc(selectedBookTitle)}</h2>
+        <div class="book-cover-card">
+          <div class="book-cover-top">
+            <div class="book-cover-card-img">${book.cover ? `<img src="${esc(book.cover)}" alt="${esc(selectedBookTitle)}">` : `<span class="cover-fallback-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></span>`}</div>
+            <div class="book-cover-card-info">
+              <div class="book-cover-info-row">
+                <span class="info-label">단원목록</span>
+                <ul class="unit-list">
+                  ${unitList.length ? unitList.map((u) => `<li>${esc(u.text)}${u.done ? ' <span class="inline-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg></span>' : ""}</li>`).join("") : `<li class="empty">-</li>`}
+                </ul>
+              </div>
+            </div>
+          </div>
+          ${book.progress != null ? `
+          <div class="book-cover-progress">
+            <div class="progress-track"><div class="progress-fill" style="width:${book.progress}%"></div></div>
+            <div class="progress-label">진도 ${book.progress}%</div>
+          </div>` : ""}
+        </div>
+        <h2><span class="page-title-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg></span>학습기록</h2>
+        <div class="section-hint">이 교재와 관련된 학습 · 과제 · 평가 기록을 최근순으로 보여줍니다</div>
+        <div class="seg-toggle">
+          <button class="${bookLogFilter === "전체" ? "active" : ""}" onclick="setBookLogFilter('전체')">전체</button>
+          <button class="${bookLogFilter === "학습" ? "active" : ""}" onclick="setBookLogFilter('학습')">학습</button>
+          <button class="${bookLogFilter === "과제" ? "active" : ""}" onclick="setBookLogFilter('과제')">과제</button>
+          <button class="${bookLogFilter === "평가" ? "active" : ""}" onclick="setBookLogFilter('평가')">평가</button>
+        </div>
+        ${(() => {
+          const filteredSorted = bookLogFilter === "전체" ? sorted : sorted.filter((l) => l.type === bookLogFilter)
+          const groups = []
+          filteredSorted.forEach((l) => {
+            const last = groups[groups.length - 1]
+            if (last && last.date === l.date) { last.items.push(l) } else { groups.push({ date: l.date, items: [l] }) }
+          })
+          return groups.length ? groups.map((g) => `
+            <div class="log-date-group">
+              <div class="log-date-label">${esc(withDow(g.date))}</div>
+              ${g.items.map((l) => `
+                <div class="log-card ${l.type}">
+                  <div class="log-top">
+                  <div class="log-icon"><span class="log-icon-emoji">${l.icon}</span><span class="log-icon-label">${l.type}</span></div>
+                  <div class="log-body">
+                    <div class="log-title-row"><div class="log-title">${esc([l.book, l.range].filter(Boolean).join(" · ") || "기록")}</div>${l.pill ? `<span class="log-pill ${l.pillTone || ""}">${esc(l.pill)}</span>` : ""}</div>
+                  </div>
+                </div>
+                ${(() => {
+                  const meta = renderLogMetaRows(l.unit, l.note, l.type === "과제" ? [l.classDate ? `출제: ${withDow(l.classDate)}` : null, l.due ? `마감: ${withDow(l.due)}` : null].filter(Boolean) : [])
+                  const hasExtra = l.photo || (l.body && buildFeedBodyHtml(l.body))
+                  const chevronBtn = hasExtra ? `<button type="button" class="log-extra-chevron" onclick="toggleLogExtra(this)" aria-label="펼치기"><svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button>` : ""
+                  const metaHtml = (meta || chevronBtn) ? `<div class="log-meta">${meta}${chevronBtn}</div>` : ""
+                  const extraHtml = hasExtra ? `<div class="log-extra">${l.photo ? `<img class="log-photo" src="${esc(l.photo)}" />` : ""}${buildFeedBodyHtml(l.body)}</div>` : ""
+                  return metaHtml + extraHtml
+                })()}
+                </div>
+              `).join("")}
+            </div>
+          `).join("") : `<div class="empty">이 교재와 관련된 기록이 없습니다.</div>`
+        })()}
+        </div>
+      </div>
+      </div>
+    </div>
+    ${regTabbarHtml(regTab, true)}
+  `
+}
+function setBookStatusTab(status) {
+  bookStatusTab = status
+  renderApp()
+}
+function setStudyLogFilter(filter) {
+  studyLogFilter = filter
+  renderApp()
+}
+function setBookLogFilter(filter) {
+  bookLogFilter = filter
+  renderApp()
+}
+function setRegTab(tab) {
+  regTab = tab
+  renderApp()
+  window.scrollTo({ top: 0 })
+}
+
+function goIntro() {
+  view = "intro"
+  selectedToken = null
+  selectedCalDate = null
+  renderApp()
+}
+
+function selectCalDay(date) {
+  selectedCalDate = date
+  regTab = "report"
+  reportPeriod = "day"
+  reportDayDate = date
+  view = "detail"
+  renderApp()
+  window.scrollTo({ top: 0 })
+}
+
+function scrollToTimetable() {
+  document.getElementById("timetable-section")?.scrollIntoView({ behavior: "smooth" })
+}
+function scrollToIntro() {
+  document.getElementById("intro-section")?.scrollIntoView({ behavior: "smooth" })
+}
+function scrollToSchedule() {
+  document.getElementById("schedule-section")?.scrollIntoView({ behavior: "smooth" })
+}
+function scrollToRegSection(id) {
+  document.getElementById(id)?.scrollIntoView({ behavior: "smooth" })
+}
+
+function basicInfoBodyHtml() {
+  const s = STUDENT
+  return `
+    <div class="info-detail-row"><span class="label">학생이름</span><span>${esc(s.student_name)}</span></div>
+    <div class="info-detail-row"><span class="label">학교</span><span>${esc(s.school)}</span></div>
+    <div class="info-detail-row"><span class="label">학년</span><span>${esc(s.grade)}</span></div>
+    <div class="info-detail-row"><span class="label">성별</span><span>${esc(s.gender)}</span></div>
+    <div class="info-detail-row"><span class="label">생년월일</span><span>${esc(s.birthdate)}</span></div>
+    <div class="info-detail-row"><span class="label">형제자매</span><span>${s.siblings.length ? s.siblings.map((sib) => sib.token ? `<a href="?token=${encodeURIComponent(sib.token)}" class="sibling-link">${esc(sib.name)}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>` : esc(sib.name)).join(", ") : "-"}</span></div>
+    <div class="info-detail-row"><span class="label">학생 연락처</span><span>${esc(s.student_phone)}</span></div>
+    <div class="info-detail-row"><span class="label">어머니 연락처</span><span>${esc(s.mother_phone)}</span></div>
+    <div class="info-detail-row"><span class="label">아버지 연락처</span><span>${esc(s.father_phone)}</span></div>
+  `
+}
+
+function registrationsBodyHtml() {
+  const statusOrder = { "수강중": 0, "수강종료": 1, "수강대기": 2 }
+  const regs = STUDENT.registrations.slice().sort((a, b) => {
+    const sa = statusOrder[a.status] ?? 3
+    const sb = statusOrder[b.status] ?? 3
+    if (sa !== sb) return sa - sb
+    return (a.start || "").localeCompare(b.start || "")
+  })
+  return regs.map((r) => `
+    <div class="reg-item" onclick="closeMenu(); openRegistration('${r.token}')">
+      <div class="left">
+        <span>${r.emoji}</span>
+        <div class="name-wrap">
+          <span class="class-name">${esc(r.class_name)}</span>
+          <span class="period">${esc(toShortDate(r.start))} ~ ${r.end ? esc(toShortDate(r.end)) : "현재"}</span>
+        </div>
+      </div>
+      <span class="badge ${esc(r.status)}">${esc(r.status)}</span>
+    </div>
+  `).join("")
+}
+
+function navigateScheduleMonth(delta) {
+  // [FIX] Don't allow paging further back than MAX_LOOKBACK_MONTHS; without this the
+  // calendar could be paged back indefinitely into months with no data at all.
+  if (delta < 0 && scheduleMonthIndex <= -MAX_LOOKBACK_MONTHS) return
+  scheduleMonthIndex += delta
+  const area = document.getElementById("schedule-cal-area")
+  if (area) {
+    area.innerHTML = buildScheduleCalendarHtml()
+  } else {
+    renderApp()
+  }
+}
+function goScheduleToday() {
+  scheduleMonthIndex = 0
+  const area = document.getElementById("schedule-cal-area")
+  if (area) {
+    area.innerHTML = buildScheduleCalendarHtml()
+  } else {
+    renderApp()
+  }
+}
+
+function addDaysStr(dateStr, days) {
+  const d = new Date(dateStr + "T00:00:00")
+  d.setDate(d.getDate() + days)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+}
+
+// 주간 보고서는 항상 월요일~일요일로 고정한다. (요일에 관계없이 오늘이 속한 캘린더 주의 월요일을 기준으로 삼는다)
+function mondayOfWeek(dateStr) {
+  const d = new Date(dateStr + "T00:00:00")
+  const day = d.getDay() // 0=일 ... 6=토
+  const diffFromMonday = (day + 6) % 7
+  return addDaysStr(dateStr, -diffFromMonday)
+}
+
+// 이모지는 카테고리 '이름'과 분리해서 관리한다. 노션 원본의 이모지 표기가 조금 달라져도
+// normalizeCategoryName()으로 이모지를 제거한 뒤 이름 텍스트만으로 매칭한다.
+function normalizeCategoryName(category) {
+  return String(category || "")
+    .replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, "")
+    .trim()
+}
+const NOTICE_CATEGORY_COLORS = { "휴원": "#9b9a97", "학원 일정": "#337ea9", "학사 일정": "#e03e3e", "할일": "#448361" }
+const NOTICE_CATEGORY_ICON = {
+  "휴원": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>',
+  "학원 일정": '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>',
+  "학사 일정": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>',
+  "할일": '<svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>',
+}
+// 할일은 강사/직원용 내부 항목이므로 학생에게는 절대 노출하지 않는다.
+function getStudentVisibleNotices() {
+  return STUDENT.notices.filter((n) => normalizeCategoryName(n.category) !== "할일")
+}
+function scheduleBaseDate() {
+  const [y, m] = MOCK_TODAY.split("-").map(Number)
+  return new Date(y, m - 1 + scheduleMonthIndex, 1)
+}
+function buildScheduleCalendarHtml() {
+  const notices = getStudentVisibleNotices()
+  const base = scheduleBaseDate()
+  const y = base.getFullYear()
+  const mo = base.getMonth() + 1
+  const monthKey = `${y}-${String(mo).padStart(2, "0")}`
+  // 다른 캘린더들과 동일하게 월요일 시작으로 통일한다.
+  const leading = (new Date(y, mo - 1, 1).getDay() + 6) % 7
+  const daysInMonth = new Date(y, mo, 0).getDate()
+  const trailing = (7 - ((leading + daysInMonth) % 7)) % 7
+  const firstCellDate = addDaysStr(`${y}-${String(mo).padStart(2, "0")}-01`, -leading)
+  const byDay = {}
+  notices.filter((n) => n.date && n.date.startsWith(monthKey)).forEach((n) => {
+    const d = Number(n.date.slice(8, 10))
+    byDay[d] = byDay[d] || []
+    byDay[d].push(n)
+  })
+  let cells = ""
+  for (let i = 0; i < leading + daysInMonth + trailing; i++) {
+    const dateStr = addDaysStr(firstCellDate, i)
+    const d = Number(dateStr.slice(8, 10))
+    const outside = !dateStr.startsWith(monthKey)
+    const dow = new Date(dateStr + "T00:00:00").getDay()
+    const weekendClass = dow === 6 ? "sat" : dow === 0 ? "sun" : ""
+    const evts = outside ? null : byDay[d]
+    const today = !outside && dateStr === MOCK_TODAY ? "today" : ""
+    const dots = evts ? evts.slice(0, 3).map((n) => `<span class="cal-dot" style="background:${NOTICE_CATEGORY_COLORS[normalizeCategoryName(n.category)] || "#999"}"></span>`).join("") : ""
+    cells += `<div class="cal-cell ${evts ? "has-event" : ""} ${today} ${outside ? "outside" : ""} ${weekendClass}" ${evts ? `onclick="openScheduleDay('${dateStr}')"` : ""}><span>${d}</span>${evts ? `<span class="cal-dots">${dots}</span>` : ""}</div>`
+  }
+  return `
+    <div class="schedule-cal-wrap">
+      <div class="cal-month">
+        <div class="cal-month-nav">
+          <button class="cal-nav-btn" ${scheduleMonthIndex <= -MAX_LOOKBACK_MONTHS ? "disabled" : ""} onclick="navigateScheduleMonth(-1)">‹</button>
+          <div class="cal-month-title">${y}년 ${mo}월</div>
+          <div class="cal-nav-right">
+            <button class="cal-today-btn" onclick="goScheduleToday()">오늘</button>
+            <button class="cal-nav-btn" onclick="navigateScheduleMonth(1)">›</button>
+          </div>
+        </div>
+        <div class="cal-weekdays">${["월", "화", "수", "목", "금", "토", "일"].map((w, i) => `<div class="${i === 5 ? "sat" : i === 6 ? "sun" : ""}">${w}</div>`).join("")}</div>
+        <div class="cal-grid">${cells}</div>
+      </div>
+    </div>
+  `
+}
+function openScheduleDay(dateStr) {
+  const dayNotices = getStudentVisibleNotices().filter((n) => n.date === dateStr)
+  document.getElementById("schedule-day-modal-title").textContent = dateStr
+  document.getElementById("schedule-day-modal-body").innerHTML = dayNotices.length ? dayNotices.map((n) => `
+    <div class="list-item">
+      <div class="title"><span class="cal-dot" style="background:${NOTICE_CATEGORY_COLORS[normalizeCategoryName(n.category)] || "#999"}"></span>${esc(n.title)}</div>
+      <div class="meta"><span class="inline-icon">${NOTICE_CATEGORY_ICON[normalizeCategoryName(n.category)] || ""}</span>${esc(normalizeCategoryName(n.category) || "안내")}</div>
+    </div>
+  `).join("") : '<div class="empty">이 날짜에는 일정이 없습니다.</div>'
+  document.getElementById("schedule-day-modal").classList.add("active")
+}
+function closeScheduleDayModal() {
+  document.getElementById("schedule-day-modal").classList.remove("active")
+}
+
+let testChartPoints = []
+function showTestDetailModal(i) {
+  const p = testChartPoints[i]
+  if (!p) return
+  document.getElementById("test-detail-modal-title").textContent = p.label
+  const items = p.items || []
+  document.getElementById("test-detail-modal-body").innerHTML = items.length
+    ? items.map((t) => `
+      <div class="log-row 평가">
+        <div class="log-title-row"><div class="log-title">${esc([t.book, t.range].filter(Boolean).join(" · "))}</div><span class="log-pill ${scorePillTone(t.correct ?? 0, t.total ?? 0)}">${scorePillText(t.correct ?? 0, t.total ?? 0)}</span></div>
+        ${renderLogMetaRows(t.unit, t.note, [`날짜: ${t.date ? String(t.date).slice(0, 10) : "-"}`])}
+      </div>
+    `).join("")
+    : `<div class="log-row 평가"><div class="log-note">해당 기간 평가 기록이 없습니다.</div></div>`
+  document.getElementById("test-detail-modal").classList.add("active")
+}
+function closeTestDetailModal() {
+  document.getElementById("test-detail-modal").classList.remove("active")
+}
+function showHomeworkDayModal(date) {
+  const r = STUDENT.registrations.find((x) => x.token === selectedToken)
+  if (!r) return
+  const items = (r.homework || []).filter((h) => String(h.due || "").slice(0, 10) === date)
+  document.getElementById("homework-detail-modal-title").textContent = formatDateLabel(date)
+  document.getElementById("homework-detail-modal-body").innerHTML = items.length
+    ? items.map((h) => `
+      <div class="log-row 과제">
+        <div class="log-title-row"><div class="log-title">${esc([h.book, h.range].filter(Boolean).join(" · "))}</div><span class="log-pill ${homeworkPillTone(h.status)}">${esc(h.status)}</span></div>
+        ${renderLogMetaRows(h.unit, h.note, h.classDate ? [`출제: ${withDow(h.classDate)}`] : [])}
+      </div>
+    `).join("")
+    : `<div class="log-row 과제"><div class="log-note">이 날짜에 마감인 과제가 없습니다.</div></div>`
+  document.getElementById("homework-detail-modal").classList.add("active")
+}
+function closeHomeworkDayModal() {
+  document.getElementById("homework-detail-modal").classList.remove("active")
+}
+// 주간·월간 보고서의 "과제이행률" 도넛을 누르면 그 기간에 마감인 과제 목록을 모달로 보여준다.
+// (일일 보고서의 과제상태 모달과 같은 카드 스타일을 재사용한다.)
+function showHomeworkPeriodModal(rangeStart, rangeEnd, label) {
+  const r = STUDENT.registrations.find((x) => x.token === selectedToken)
+  if (!r) return
+  const items = (r.homework || []).filter((h) => h.due && h.due >= rangeStart && h.due <= rangeEnd)
+  document.getElementById("homework-detail-modal-title").textContent = label
+  document.getElementById("homework-detail-modal-body").innerHTML = items.length
+    ? items.map((h) => `
+      <div class="log-row 과제">
+        <div class="log-title-row"><div class="log-title">${esc([h.book, h.range].filter(Boolean).join(" · "))}</div><span class="log-pill ${homeworkPillTone(h.status)}">${esc(h.status)}</span></div>
+        ${renderLogMetaRows(h.unit, h.note, [h.classDate ? `출제: ${withDow(h.classDate)}` : null, `마감: ${withDow(h.due)}`].filter(Boolean))}
+      </div>
+    `).join("")
+    : `<div class="log-row 과제"><div class="log-note">해당 기간에 마감인 과제가 없습니다.</div></div>`
+  document.getElementById("homework-detail-modal").classList.add("active")
+}
