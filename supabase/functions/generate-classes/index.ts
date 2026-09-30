@@ -534,10 +534,6 @@ async function processTimetable(timetable: any, log: string[], mode: ProcessMode
   // still reading the old key name, so this gate silently always fell back to the "00:00"
   // default. Fixed to read the current property name.)
   const generationTime = props["자동생성 시간"]?.rich_text?.[0]?.plain_text || "00:00"
-  // (2026-09-30) 시간표의 "수업 방식"(그룹 수업/개별 수업)을 생성되는 수업(학원) DB 세션에도
-  // 그대로 복사한다. 두 DB의 select 옵션 이름이 동일("그룹 수업"/"개별 수업")하므로 값을 그대로
-  // 전달하면 된다. 시간표 쪽 값이 비어 있으면(옛 행 등) 수업 쪽 속성도 채우지 않고 건너뛴다.
-  const classMode = props["수업 방식"]?.select?.name
 
   const today = todayKstDateStr()
   // (2026-09-24, PART N-17: 계측 로그 추가) 학생 수가 많은 반이 반복 타임아웃나는 걸 실측으로
@@ -627,7 +623,6 @@ async function processTimetable(timetable: any, log: string[], mode: ProcessMode
       시간표: { relation: [{ id: timetableId }] },
       등록: { relation: registrationIds.map((id) => ({ id })) },
       ...(teacherIds.length ? { 담당강사: { relation: teacherIds.map((id) => ({ id })) } } : {}),
-      ...(classMode ? { "수업 방식": { select: { name: classMode } } } : {}),
       // 아래에서 출석 생성이 끝나는 즉시 markSessionDone/markSessionError로 완료/오류 처리된다.
       [SESSION_GEN_STATUS_SPEC.statusProp]: { select: { name: STATUS_RUNNING } },
       [SESSION_GEN_STATUS_SPEC.startedAtProp]: { date: { start: new Date().toISOString() } },
