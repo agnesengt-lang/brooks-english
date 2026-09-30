@@ -309,7 +309,10 @@ Deno.serve(async (req: Request) => {
                 },
                 disableSms: false,
               },
-            })
+              // [FIX, 2026-09-30] allowDuplicates 미지정 시 Solapi가 짧은 시간 안의 동일 수신번호
+              // 반복 발송을 접수 거부한다. 등원/하원 키오스크 체크는 하루에 두 번(등원/하원) 눌리는
+              // 정상 흐름이라 이 보호가 오히려 방해될 수 있어 허용한다.
+            }, { allowDuplicates: true })
           }
           await createSendLogEntry({
             registrationId,

@@ -121,7 +121,9 @@ async function sendAlimtalk(
       variables,
       disableSms: false,
     },
-  })
+    // [FIX, 2026-09-30] allowDuplicates 미지정 시 Solapi가 짧은 시간 안의 동일 수신번호 반복 발송을
+    // 접수 거부한다. 관리자가 실패 건을 바로 재시도하는 정상적인 경우까지 막히므로 허용한다.
+  }, { allowDuplicates: true })
 }
 
 Deno.serve(async (req) => {
