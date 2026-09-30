@@ -130,9 +130,10 @@ async function processStudent(studentId: string, studentPage: any) {
   const guardianRelation = richText(studentPage, "학생과의 관계")
 
   try {
-    if (studentPage.properties?.["개인정보 동의"]?.checkbox !== true) {
-      throw new Error("개인정보 동의를 확인한 뒤 발송해주세요.")
-    }
+    // (2026-09-30) 관리자가 상담 문의를 직접 입력해 "접수안내 발송" 버튼을 누르는 경우, 아직
+    // 개인정보 동의 체크박스를 받지 않은 상태에서도 발송할 수 있어야 한다는 요청에 따라 이
+    // 게이트를 제거했다. 개인정보 동의 자체는 여전히 "상담신청서" 폼에서 필수(required) 항목으로
+    // 남아있어 폼 제출 경로는 그대로 보호된다 — 이 체크는 관리자 수동 입력 경로만 막고 있었다.
     if (!recipientType) throw new Error("우선 연락 대상을 선택해주세요.")
 
     const config = await getConfig()
