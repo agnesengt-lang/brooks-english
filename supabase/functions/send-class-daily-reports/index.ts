@@ -7,7 +7,7 @@
 //   Notion에서 학생마다 다시 읽지 않는다. 체인이 끝나면 실행 캐시를 삭제한다.
 // - 한 학생이 실패해도 이름과 오류를 남기고 다음 학생을 계속 처리한다.
 
-import { createSendLogEntry, getBotUserId, notionGetPage, resolveAdminKeyFromRequest } from "../_shared/adminShared.ts"
+import { createSendLogEntry, extractErrorMessage, getBotUserId, notionGetPage, resolveAdminKeyFromRequest } from "../_shared/adminShared.ts"
 import {
   getFormulaText,
   getEffectiveAdminKey,
@@ -108,7 +108,12 @@ async function sendOneStudentReport(
         title: studentName || "일일 보고서",
         category: "일일 보고서",
         status: "실패",
-        failReason: String((sendErr as any)?.message ?? sendErr),
+        // [FIX, 2026-09-30] Solapi SDK가 던지는 MessageNotReceivedError의 .message는
+        // "N개의 메시지가 접수되지 못했습니다. ... failedMessageList를 확인해주세요"라는 일반
+        // 안내문일 뿐, 실제 실패 원인은 err.failedMessageList[0].statusMessage에 들어있다.
+        // extractErrorMessage가 이 필드를 함께 뽑아내므로 실패 사유가 항상 같은 문구로만
+        // 남던 문제를 해결한다.
+        failReason: extractErrorMessage(sendErr),
       })
       throw sendErr
     }
@@ -128,7 +133,7 @@ async function sendOneStudentReport(
     await setAttendanceReportSendingFlag(attendanceId, false)
     return { studentName }
   } catch (err) {
-    await setAttendanceReportLastError(attendanceId, String((err as any)?.message ?? err))
+    await setAttendanceReportLastError(attendanceId, extractErrorMessage(err))
     await setAttendanceReportSendingFlag(attendanceId, false)
     throw err
   }
