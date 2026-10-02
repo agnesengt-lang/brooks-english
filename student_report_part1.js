@@ -298,6 +298,31 @@ function buildFeedBodyHtml(body) {
   return `<div class="feed-body">${parts.join("")}</div>`
 }
 
+// 학습기록의 공통 원본과 학생별 학습활동 결과를 유형별 명칭으로 구분한다.
+// 양쪽이 모두 있을 때만 구분선을 넣고, 한쪽이 비면 존재하는 영역과 라벨만 표시한다.
+const FEED_SECTION_LABELS = {
+  "학습": { source: "수업 자료", activity: "학습 결과" },
+  "과제": { source: "출제 내용", activity: "제출 내용" },
+  "평가": { source: "평가 문항", activity: "풀이·답안" },
+}
+function buildCombinedFeedBodyHtml(sourceBody, activityBody, type) {
+  const sourceHtml = buildFeedBodyHtml(sourceBody)
+  const activityHtml = buildFeedBodyHtml(activityBody)
+  if (!sourceHtml && !activityHtml) return ""
+  const labels = FEED_SECTION_LABELS[type] || { source: "제공 내용", activity: "학습 결과" }
+  const sourceSection = sourceHtml ? `<section class="feed-section"><div class="feed-section-label">${esc(labels.source)}</div>${sourceHtml}</section>` : ""
+  const activitySection = activityHtml ? `<section class="feed-section"><div class="feed-section-label">${esc(labels.activity)}</div>${activityHtml}</section>` : ""
+  const divider = sourceHtml && activityHtml ? `<hr class="feed-source-activity-divider">` : ""
+  return `<div class="feed-combined">${sourceSection}${divider}${activitySection}</div>`
+}
+function buildLogBodyHtml(log) {
+  if (!log) return ""
+  if ((log.sourceBody && log.sourceBody.length) || (log.activityBody && log.activityBody.length)) {
+    return buildCombinedFeedBodyHtml(log.sourceBody, log.activityBody, log.type)
+  }
+  return buildFeedBodyHtml(log.body)
+}
+
 // 피드 이미지 탭 → 전체화면 뷰어
 function openFeedImage(url) {
   if (!url) return
@@ -362,12 +387,13 @@ function mapRegistration(reg) {
       const kstDate = isoToKstDate(rawDate)
       return { date: kstDate || (rawDate ? String(rawDate).slice(0, 10) : null), weekday: a.weekday || "", status: a.status || "" }
     }),
-    study_logs: (reg.study_logs || []).map((s) => ({ book: s.book || "", range: s.range || "", unit: s.unit || "", date: isoToKstDate(s.iso) || (s.iso ? String(s.iso).slice(0, 10) : null), note: s.note || "", body: normalizeFeedBody(s.body) })),
+    // 학습·과제·평가를 같은 수업일로 묶을 수 있도록 시각 포함 ISO 값을 모두 KST 날짜로 통일한다.
+    study_logs: (reg.study_logs || []).map((s) => ({ type: "학습", book: s.book || "", range: s.range || "", unit: s.unit || "", date: isoToKstDate(s.iso) || (s.iso ? String(s.iso).slice(0, 10) : null), note: s.note || "", body: normalizeFeedBody(s.body), sourceBody: normalizeFeedBody(s.source_body || s.body), activityBody: normalizeFeedBody(s.activity_body) })),
     // classDate(수업일)는 백엔드가 h.iso로 내려주지만 지금까지 프론트에서 버려지고 있었다. "다음과제"를
     // 마감일이 아니라 수업일(그 과제를 실제로 내준 날) 기준으로 판단하려면 이 값이 있어야 한다.
-    homework: (reg.homework || []).map((h) => ({ title: h.title || "", book: h.book || "", range: h.range || "", unit: h.unit || "", note: h.note || "", due: h.due_iso || null, classDate: isoToKstDate(h.iso) || null, status: h.status || "미제출" })),
+    homework: (reg.homework || []).map((h) => ({ type: "과제", title: h.title || "", book: h.book || "", range: h.range || "", unit: h.unit || "", note: h.note || "", due: h.due_iso || null, classDate: isoToKstDate(h.iso) || null, status: h.status || "미제출", sourceBody: normalizeFeedBody(h.source_body), activityBody: normalizeFeedBody(h.activity_body) })),
     homework_days: (reg.homework_days || []).map((h) => ({ date: h.date || null, status: h.status || "미완료", submitted: h.submitted ?? 0, total: h.total ?? 0 })),
-    tests: (reg.tests || []).map((t) => ({ title: t.title || "", book: t.book || "", range: t.range || "", unit: t.unit || "", note: t.note || "", date: isoToKstDate(t.iso) || (t.iso ? String(t.iso).slice(0, 10) : null), correct: t.correct ?? 0, total: t.total ?? 0 })),
+    tests: (reg.tests || []).map((t) => ({ type: "평가", title: t.title || "", book: t.book || "", range: t.range || "", unit: t.unit || "", note: t.note || "", date: isoToKstDate(t.iso) || (t.iso ? String(t.iso).slice(0, 10) : null), correct: t.correct ?? 0, total: t.total ?? 0, sourceBody: normalizeFeedBody(t.source_body), activityBody: normalizeFeedBody(t.activity_body) })),
     teacher_comments: (reg.teacher_comments || []).map((c) => ({ text: c.text || "", date: c.iso || null, by: c.by || "" })),
     // 주간/월간 보고서: 보고서(학원) DB 자체의 "선생님 한마디"를 보고서 구분·학습 기간과 함께 보관한다.
     report_comments: (reg.report_comments || []).map((c) => ({ kind: c.kind || "", start: c.start || null, end: c.end || c.start || null, comment: c.comment || "" })),
@@ -567,13 +593,13 @@ function renderBookDetail() {
   const book = books.find((b) => normBookTitle(b.title) === targetTitle) || {}
   const items = []
   ;((r.study_logs) || []).filter((l) => normBookTitle(l.book) === targetTitle).forEach((l) => items.push({
-    type: "학습", icon: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>`, date: l.date, book: l.book, range: l.range, unit: l.unit, note: l.note, pill: null, photo: l.photo, body: l.body,
+    type: "학습", icon: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>`, date: l.date, book: l.book, range: l.range, unit: l.unit, note: l.note, pill: null, photo: l.photo, body: l.body, sourceBody: l.sourceBody, activityBody: l.activityBody,
   }))
   ;((r.homework) || []).filter((h) => normBookTitle(h.book) === targetTitle).forEach((h) => items.push({
-    type: "과제", icon: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>`, date: h.classDate || h.due, due: h.due, classDate: h.classDate, book: h.book, range: h.range, unit: h.unit, note: h.note || h.title, pill: h.status, pillTone: homeworkPillTone(h.status), photo: null, body: null,
+    type: "과제", icon: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>`, date: h.classDate || h.due, due: h.due, classDate: h.classDate, book: h.book, range: h.range, unit: h.unit, note: h.note || h.title, pill: h.status, pillTone: homeworkPillTone(h.status), photo: null, sourceBody: h.sourceBody, activityBody: h.activityBody,
   }))
   ;((r.tests) || []).filter((t) => normBookTitle(t.book) === targetTitle).forEach((t) => items.push({
-    type: "평가", icon: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>`, date: t.date, book: t.book, range: t.range, unit: t.unit, note: t.note || t.title, pill: scorePillText(t.correct ?? 0, t.total ?? 0), pillTone: scorePillTone(t.correct ?? 0, t.total ?? 0), photo: null, body: null,
+    type: "평가", icon: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>`, date: t.date, book: t.book, range: t.range, unit: t.unit, note: t.note || t.title, pill: scorePillText(t.correct ?? 0, t.total ?? 0), pillTone: scorePillTone(t.correct ?? 0, t.total ?? 0), photo: null, sourceBody: t.sourceBody, activityBody: t.activityBody,
   }))
   const sorted = items.slice().sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
   const studiedUnitKeys = new Set()
@@ -675,10 +701,11 @@ function renderBookDetail() {
                 </div>
                 ${(() => {
                   const meta = renderLogMetaRows(l.unit, l.note, l.type === "과제" ? [l.classDate ? `출제: ${withDow(l.classDate)}` : null, l.due ? `마감: ${withDow(l.due)}` : null].filter(Boolean) : [])
-                  const hasExtra = l.photo || (l.body && buildFeedBodyHtml(l.body))
+                  const bodyHtml = buildLogBodyHtml(l)
+                  const hasExtra = l.photo || !!bodyHtml
                   const chevronBtn = hasExtra ? `<button type="button" class="log-extra-chevron" onclick="toggleLogExtra(this)" aria-label="펼치기"><svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button>` : ""
                   const metaHtml = (meta || chevronBtn) ? `<div class="log-meta">${meta}${chevronBtn}</div>` : ""
-                  const extraHtml = hasExtra ? `<div class="log-extra">${l.photo ? `<img class="log-photo" src="${esc(l.photo)}" />` : ""}${buildFeedBodyHtml(l.body)}</div>` : ""
+                  const extraHtml = hasExtra ? `<div class="log-extra">${l.photo ? `<img class="log-photo" src="${esc(l.photo)}" />` : ""}${bodyHtml}</div>` : ""
                   return metaHtml + extraHtml
                 })()}
                 </div>
