@@ -1150,4 +1150,3 @@ Deno.serve(async (req: Request) => {
     { status: 400, headers: { "Content-Type": "application/json" } },
   )
 })
-

@@ -24,56 +24,60 @@
 // 구현된 적이 없었다 (항상 404 "알 수 없는 경로: create-class" — Supabase 로그로 실제 운영 클래스
 // "고1 A반"에서도 확인됨, 화면에는 그냥 아무 반응 없음으로만 보였다). 클래스에 연결된 활성(🟢 수강
 // 중) 등록 전체에 대해 createIndividualBooksForRegistration을 실행하는 createBooksForClass를
-// 추가했다. 당시에는 create-individual과 동일한 runSyncWebhookForPage를 재사용해 즉시 응답 후
-// EdgeRuntime.waitUntil 백그라운드에서 처리했다. pageId 자리에 classId를 넘기고, 잠금/상태 속성은
+// 추가했다. 현재는 create-individual과 동일한 runSyncWebhookForPage를 재사용해 즉시 응답 후
+// EdgeRuntime.waitUntil 백그라운드에서 처리한다. pageId 자리에 classId를 넘기고, 잠금/상태 속성은
 // 클래스 DB의 "교재 생성 상태"와 "마지막 오류"를 사용한다.
 //
-// (2026-10-04, PART N-13: "교재 생성" 버튼 경쟁 조건 + 대상 판정 버그 수정)
+// (2026-10-04, PART N-11: 클래스 "교재 생성" 순차 이어달리기 재설계) PART N-8의 createBooksForClass는
+// mapWithConcurrency(registrations, 4, ...)로 등록 여러 건을 "동시에" 처리했다. 그런데 그룹 진도
+// 모드에서는 반별교재(템플릿) 페이지 "하나"를 반 전체 등록이 공유하고, resolveInstanceForTemplate이
+// 그 템플릿의 "등록" relation을 읽고(read) -> 수정하고(modify) -> 통째로 다시 쓰는(write) 방식으로
+// 등록을 추가한다. 이 read-modify-write가 원자적이지 않아서, 같은 템플릿을 동시에 겨냥하는 등록
+// 여러 건의 쓰기가 서로 경쟁(race)하면 "마지막에 쓴 쪽이 이긴다" -- 즉 먼저 끝낸 등록들이 추가한
+// 내용이 조용히 덮어써져 사라진다. 실제로 "고1 A" 클래스(6명 x 템플릿 4개 = 24쌍)에서 일부 쌍만
+// 연결되거나 한쪽 방향으로만 연결되는 현상으로 나타났고, 학생 수가 많아질수록(동시 처리 4건) 더
+// 자주 재현된다. 근본 해결은 "등록을 절대 동시에 처리하지 않는 것"이다 -- 클래스 배치 레벨에서는
+// 완전히 순차 처리하도록 바꾼다(등록 1건 안에서 서로 다른 템플릿들을 mapWithConcurrency(4)로 처리하는
+// 것은 그대로 안전하다 -- 템플릿이 다르면 공유 상태가 없다).
 //
-// [3-1. 동시성 제거] 위 createBooksForClass(mapWithConcurrency(..., 4, ...))는 클래스의 등록
-// (학생) 여러 건을 동시에 처리했다. 그룹 진도 모드에서는 반별교재(템플릿) 페이지 "하나"를 반 전체
-// 학생이 공유하는데, resolveInstanceForTemplate이 템플릿의 "등록" relation을 갱신할 때
-// "읽고(read) → 고치고(modify) → 통째로 다시 쓰는(write)" 방식을 쓴다. 이 read-modify-write가
-// 원자적이지 않아서, 같은 템플릿을 동시에 건드리는 학생 여러 명의 쓰기가 서로 경쟁(race)하면
-// 나중에 쓴 쪽이 앞서 쓴 내용을 덮어써 버린다 (실제로 고1 A 클래스, 학생 5~6명 × 템플릿 4개
-// 테스트에서 일부 학생-템플릿 쌍이 비거나 단방향으로만 연결되는 현상이 재현됨, 오류 메시지 없이
-// "완료"로만 보였다). 동시 처리 건수가 많을수록(학생 수가 많을수록) 더 자주 재현됐다.
+// 동시에 사용자가 요청한 두 번째 문제("처리 중 실시간 상태를 보고 싶다")도 함께 해결한다:
+// 완전 순차 처리 자체가 다건 배치에서 Supabase Edge Function의 플랫폼 실행시간 한도(~150초)에
+// 걸릴 수 있으므로, send-selected-notifications(알림톡 발송함 "일괄 전송")와 동일한 "고정 청크
+// (여기서는 1건) + 자기 호출 이어달리기" 패턴을 쓴다(index.ts). 그 패턴이 등록을 한 건씩 처리하는
+// 동안, 등록(학원) DB의 "교재 상태"(개별 "개별교재 생성" 버튼이 이미 쓰는 것과 동일한 속성)도 함께
+// 갱신해서, 클래스 버튼으로 처리되는 중에도 각 학생 등록 페이지에서 실시간 진행 상황이 보이게
+// 한다 -- 별도 Notion 스키마 변경 없이 기존 속성을 재사용한다. 아래 createBooksForClass(동시 처리)는
+// 제거하고, index.ts의 이어달리기 루프가 매 홉마다 쓰는 getPendingClassTextbookRegistrations /
+// createBooksForOneRegistrationWithStatus로 대체했다.
 //
-// 해결: 클래스 단위 배치를 send-class-daily-reports("보고서 일괄전송")와 동일한 "등록 1건 + 자기
-// 호출 이어달리기(chained self-call)" 패턴으로 다시 짰다 (startClassTextbookChain/
-// processClassTextbookChainStep, index.ts의 create-class 라우트 참고). 학생을 절대 동시에 처리하지
-// 않으므로 템플릿 relation 경쟁이 구조적으로 사라진다. 매 학생 처리 시 등록(학원) DB의 "교재
-// 상태"(TEXTBOOK_STATUS_SPEC)를 즉시 갱신해 실시간 진행 상황을 볼 수 있게 했고, 한 번 시도한
-// 학생은 같은 체인 안에서 다시 재시도하지 않아 특정 학생이 계속 실패해도 다른 학생 처리를 막지
-// 않는다. 체인 전체 30분 한도 안전장치도 포함했다.
+// (2026-10-04, PART N-11 실사용 검증) "고1 A" 클래스에서 실제 버튼으로 재현 테스트해 경쟁(race)
+// 없이 등록 전원이 순차 정상 연결됨을 확인했다. 테스트 과정에서 getPendingClassTextbookRegistrations의
+// 판정 기준에 대한 혼동이 한 번 있었다 -- 이 함수는 "진도교재"/템플릿의 "등록" relation이 실제로
+// 연결돼 있는지가 아니라 "교재 상태" select 값만 보고 완료 여부를 판정한다. 그래서 테스트용으로
+// relation만 수동으로 연결 해제하고 "교재 상태"는 "완료"로 남겨둔 학생은 여전히 "완료"로 간주돼
+// 다음 배치에서 건너뛰어졌다(아래 getPendingClassTextbookRegistrations 함수 설명 참고). 정상
+// 운영 중에는 "개별교재 생성"/"교재 생성" 두 버튼이 항상 relation과 "교재 상태"를 함께 갱신하므로
+// 이 간극이 생기지 않는다 -- 수동으로 relation만 건드리는 경우(주로 테스트/데이터 보정)에만
+// "교재 상태"도 함께 초기화해야 한다는 점을 기억해둔다.
 //
-// [3-2. 처리 대상 판정 방식 개선] 1차 수정(동시성 제거) 후 실사용 테스트에서 "완료로 표시된
-// 학생은 새 템플릿이 추가돼도 다시 처리되지 않는다"는 구조적 한계가 추가로 발견됐다. 예전에는
-// 등록의 "교재 상태"가 완료가 아닌 학생만 처리 대상으로 선정했는데, 템플릿이 나중에 추가되거나
-// relation만 수동으로 바뀌어도 상태가 그대로면 영원히 대상에서 빠지는 문제가 있었다. 이제는
-// 클래스의 템플릿 목록과 각 학생의 실제 relation 연결 상태를 직접 비교한다
-// (registrationNeedsTextbookSync) — 모든 템플릿이 이미 연결된 학생은 빠르게 건너뛰고, 하나라도
-// 빠진 학생만 처리한다. "교재 상태"는 더 이상 판정 기준이 아니며, 실시간 진행 표시용으로만
-// 갱신한다. 덕분에 과거 경쟁 조건으로 남아있던 단방향 연결 상태도 자동으로 다시 잡혀 스스로
-// 복구된다.
-//
-// (2026-10-06, v2.5.7 패치 적용: 개별교재 귀속·네이밍) 원본 저장소(hada-notion/project1)의 v2.5.7.md
-// 지침을 이 파일의 PART N-13 체인 구조(원본 diff 작성 시점에는 없던 구조)에 맞게 적용했다. 원본
-// diff는 mapWithConcurrency/getPendingClassTextbookRegistrations 등 운영에 없는 구조를 전제로
-// 했으므로, 동일한 두 가지 동작 변경만 이 구조 위에 재구현했다:
-//   1. 새 개별교재는 반별교재(템플릿)의 클래스/제목을 복사하지 않는다. 제목은
-//      "정규교재명(등록명)"으로 생성하고(fullBookTitle로 제목이 여러 서식 조각으로 나뉘어도 전체
-//      문자열 사용), PROP_CLASS_ON_BOOK은 설정하지 않는다 — 개별교재의 소속 반은 "등록 → 클래스"
-//      로만 확인한다.
-//   2. 반별교재가 비어 있고 이미 등록이 연결된(=학생에게 직접 만든) 개별교재가 클래스에도 연결돼
-//      있는 경우, isClassTextbookTemplate으로 추가 제외해 반의 배포 기준(템플릿)으로 오인하지
-//      않게 했다.
-// 체인/동시성 안전장치(3-1, 3-2)는 이미 이 운영 버전에 구현되어 있어 변경하지 않았다.
+// (2026-10-04, PART N-12: 대상 판정을 "교재 상태"에서 실제 relation 비교로 전환) 위 검증 과정에서
+// 드러난 더 근본적인 사례: 클래스에 반별교재(템플릿)가 "나중에 새로 추가"되면, 이미 "교재 상태 완료"인
+// 기존 학생들은 getPendingClassTextbookRegistrations가 애초에 대상에서 제외해서 클래스 "교재 생성"
+// 버튼을 다시 눌러도 새 템플릿을 받지 못한다 (사용자 지적 - 교재 상태만 보는 한 피할 수 없는 구조적
+// 한계). "교재 상태" select 값 대신, 클래스의 템플릿 목록과 각 등록의 실제 연결 상태를 직접 비교하는
+// 방식으로 바꾼다 -- 클래스의 템플릿을 한 번만 조회해서(getClassTextbookPages) 그룹 진도는 템플릿의
+// "등록" relation과 등록의 "진도교재" relation 양쪽에 서로 포함되는지, 개별 진도는 (등록+템플릿)에
+// 해당하는 인스턴스가 존재하고 그 인스턴스가 등록의 "진도교재"에 포함되는지를 확인한다
+// (isTemplateSatisfiedForRegistration). 모든 템플릿이 충족된 등록은 "이미 동일함" -> 빠르게 건너뛰고,
+// 하나라도 빠진 등록만 처리 대상(pending)으로 잡는다. 템플릿이 아예 없으면(클래스 세팅 전) 할 일이
+// 없는 것이므로 건너뛴다. 덤으로 예전 경쟁(race) 버그로 남아있을 수 있는 "한쪽 방향만 연결된" 상태도
+// 양쪽을 다 확인하므로 자동으로 다시 pending 처리되어 스스로 복구된다. "교재 상태"(TEXTBOOK_STATUS_SPEC)
+// 자체는 여전히 createBooksForOneRegistrationWithStatus가 갱신해서 사용자가 보는 실시간 진행 표시
+// 용도로는 그대로 남겨둔다 - 다만 더 이상 "처리할 대상인지"를 가르는 기준으로는 쓰지 않는다.
 
 import {
 	PROP_CLASS,
 	PROP_LAST_ERROR,
-	PROP_TITLE,
 	DS_REGISTRATION,
 	PROP_STATUS,
 } from "./constants.ts"
@@ -89,9 +93,10 @@ import {
 	statusName,
 	titleText,
 	formulaString,
+	mapWithConcurrency,
 } from "./notionClient.ts"
-import { isRunning, markRunning, markDone, markError, type StatusSpec } from "./statusTracking.ts"
-import { runInBackground, respondAccepted } from "./backgroundTask.ts"
+import { type StatusSpec, markRunning, markDone, markError } from "./statusTracking.ts"
+import { LIBRARY_PROP, libraryIds, libraryKey } from "./libraryProp.ts"
 
 // (2026-09-22, 처리 상태 관리 리팩토링 Phase 3) "교재 처리중" 체크박스(등록 DB, create-individual
 // 라우트 전용) → "교재 상태"(select) + "교재 처리 시작 시각"(date). 마스터플랜:
@@ -119,7 +124,6 @@ const PROP_BOOK_TITLE = "진도교재" // title
 const PROP_TEMPLATE_RELATION = "반별교재" // 인스턴스 -> 템플릿 (self-relation, limit 1)
 const PROP_PROGRESS_MODE = "진도방식" // 개별 진도 | 그룹 진도
 const PROP_PROGRESS_STATUS = "진행상태" // 다음 교재 | 진행 중 | 미사용 | 완료
-const PROP_REGULAR_BOOK = "정규교재" // relation
 const PROP_CLASS_ON_BOOK = "클래스" // relation (진도교재 DB 쪽)
 const PROP_REGISTRATION_ON_BOOK = "등록" // relation
 const PROP_LEARNING_RECORD = "학습기록" // relation
@@ -130,72 +134,9 @@ const STATUS_NEXT = "다음 교재"
 // 클래스 단위 일괄 버튼과 동일하게 "현재 🟢 수강 중"인 등록만 대상으로 한다.
 const STATUS_ACTIVE = "🟢 수강 중"
 
-// (v2.5.7) 제목의 서식이 나뉘어 있어도 첫 조각만 복사하지 않고 전체 문자열을 사용한다.
+// 제목의 서식이 나뉘어 있어도 첫 조각만 복사하지 않고 전체 문자열을 사용한다.
 function fullBookTitle(page: any, name: string): string {
 	return (page?.properties?.[name]?.title ?? []).map((part: any) => part.plain_text ?? part.text?.content ?? "").join("")
-}
-
-// (v2.5.7) 반별교재가 있으면 복사된 인스턴스다. 출처 없이 등록에 직접 연결된 개별교재도 배포
-// 기준이 아니다. 그룹 교재는 여러 등록이 연결된 뒤에도 계속 배포 기준으로 유지한다.
-function isClassTextbookTemplate(page: any): boolean {
-	if (relationIds(page, PROP_TEMPLATE_RELATION).length > 0) return false
-	const mode = selectName(page, PROP_PROGRESS_MODE) ?? "그룹 진도"
-	return mode === "그룹 진도" || relationIds(page, PROP_REGISTRATION_ON_BOOK).length === 0
-}
-
-// (PART N-13) 클래스에 연결된 반별교재(템플릿) 전체를 가져온다. candidates에는 진짜 템플릿 외에도
-// 이미 생성된 개별교재 인스턴스가 섞여 있다 (둘 다 "클래스"를 갖기 때문). 진짜 템플릿은 절대
-// PROP_TEMPLATE_RELATION("반별교재")이 채워지지 않으므로, 그것으로만 필터링해서 인스턴스가 실수로
-// "템플릿"으로 취급되어 또 다른 인스턴스를 낳는(무한 증식) 일을 막는다 (createIndividualBooksForRegistration의
-// 기존 로직을 재사용 가능하도록 분리함 — 클래스 단위 체인에서 매 학생마다 재조회한다).
-// (v2.5.7) 반별교재는 비어 있지만 이미 등록이 연결된(= 학생에게 직접 만든) 개별교재가 실수로
-// 클래스에도 연결된 경우까지 isClassTextbookTemplate으로 추가 제외한다.
-async function getTemplatePagesForClass(classId: string): Promise<{ templatePages: any[]; candidateCount: number }> {
-	// (PART N-7) 클래스 페이지를 getPage로 읽어서 그 안의 "진도교재" relation을 쓰면 25개까지만
-	// 돌아온다 (Notion 페이지 조회 API의 relation 절단 제약). 그 대신 진도교재 데이터소스를
-	// "클래스 = 이 클래스"로 직접 쿼리한다 - queryAllPages가 커서를 끝까지 따라가므로 개수 제한
-	// 없이 전부 가져온다.
-	const candidates = await queryAllPages(DATA_SOURCE_PROGRESS_BOOK, {
-		property: PROP_CLASS_ON_BOOK,
-		relation: { contains: classId },
-	})
-	const templatePages = candidates.filter(isClassTextbookTemplate)
-	return { templatePages, candidateCount: candidates.length }
-}
-
-// (PART N-13) registrationId가 templatePage 하나에 대해 이미 연결(그룹 진도) 또는 인스턴스를
-// 보유(개별 진도)하고 있는지 읽기 전용으로 확인한다. 그룹 진도는 templatePage에 이미 로드된
-// "등록" relation을 그대로 보면 되므로 추가 조회가 없고, 개별 진도만 (등록+템플릿) 조합의
-// 인스턴스 존재 여부를 쿼리한다.
-async function isTemplateLinkedForRegistration(registrationId: string, templatePage: any): Promise<boolean> {
-	const templateId = templatePage.id
-	const mode = selectName(templatePage, PROP_PROGRESS_MODE) ?? "그룹 진도"
-
-	if (mode === "그룹 진도") {
-		return relationIds(templatePage, PROP_REGISTRATION_ON_BOOK).includes(registrationId)
-	}
-
-	const already = await queryDataSource(DATA_SOURCE_PROGRESS_BOOK, {
-		filter: {
-			and: [
-				{ property: PROP_REGISTRATION_ON_BOOK, relation: { contains: registrationId } },
-				{ property: PROP_TEMPLATE_RELATION, relation: { contains: templateId } },
-			],
-		},
-		page_size: 1,
-	})
-	return already.results.length > 0
-}
-
-// (PART N-13, 3-2) 이 등록에게 templatePages 중 아직 연결되지 않은 템플릿이 하나라도 있으면
-// true(= 처리 대상)를 반환한다. "교재 상태"(select)는 더 이상 판정 기준으로 쓰지 않는다 — 템플릿이
-// 나중에 추가되거나 relation만 수동으로 바뀌어도 상태 값과 무관하게 항상 실제 연결 상태를 본다.
-export async function registrationNeedsTextbookSync(registrationId: string, templatePages: any[]): Promise<boolean> {
-	for (const templatePage of templatePages) {
-		const linked = await isTemplateLinkedForRegistration(registrationId, templatePage)
-		if (!linked) return true
-	}
-	return false
 }
 
 // 반별교재(템플릿) 하나를 보고, 이 등록에 연결할 개별교재 인스턴스를 확보한다.
@@ -203,11 +144,16 @@ export async function registrationNeedsTextbookSync(registrationId: string, temp
 //   새로 만들지 않고 그 인스턴스에 이 등록을 추가로 연결(등록 relation에 추가)만 한다.
 // - 개별 진도: 학생(등록)마다 자기만의 인스턴스를 갖는다. 이미 (이 등록 + 이 템플릿)
 //   조합의 인스턴스가 있으면 건너뛰고, 없으면 새로 만든다.
-// 주의: 등록 페이지의 "진도교재" relation은 여기서 건드리지 않는다. 호출부
-// (createIndividualBooksForRegistration)에서 결과를 모아 마지막에 한 번만 반영한다.
-// (PART N-13) 클래스 "교재 생성" 체인은 이제 학생을 한 번에 한 명씩만 처리하므로, 이 함수가
-// 템플릿의 "등록" relation을 read-modify-write 하더라도 서로 다른 학생의 쓰기가 경쟁하지 않는다.
-// (v2.5.7) registrationId 대신 registration 페이지 전체를 받는다 - 제목(등록명) 조합에 필요하다.
+// 주의: 등록 페이지의 "진도교재" relation은 여기서 건드리지 않는다. 여러 템플릿을 동시에
+// 처리할 때 각자 등록 페이지를 read-modify-write 하면 서로 덮어써서 일부가 유실되는
+// 문제가 있었기 때문에, 호출부(createIndividualBooksForRegistration)에서 결과를 모아
+// 마지막에 한 번만 반영한다.
+//
+// (PART N-11) 이 함수 자체는 "그룹 진도 템플릿의 등록 relation"에 대해 여전히 read-modify-write를
+// 한다 -- 그런데 그 템플릿 하나를 "같은 클래스의 여러 등록"이 공유하므로, 등록 여러 건을 동시에
+// 처리하면 이 read-modify-write끼리 경쟁해서 유실이 생긴다(실제로 재현된 버그). 그래서 이제
+// index.ts의 클래스 "교재 생성" 이어달리기는 등록을 절대 동시에 처리하지 않는다(완전 순차) --
+// 이 함수 내부 로직은 그대로 두되, 호출부가 등록을 하나씩만 넘기도록 보장해서 안전하게 만든다.
 async function resolveInstanceForTemplate(registration: any, templatePage: any) {
 	const registrationId = registration.id as string
 	const templateId = templatePage.id
@@ -236,12 +182,12 @@ async function resolveInstanceForTemplate(registration: any, templatePage: any) 
 		if (already.results.length > 0) return { instanceId: already.results[0].id, linked: true }
 	}
 
-	const regularBookIds = relationIds(templatePage, PROP_REGULAR_BOOK)
-	// (v2.5.7) 개별교재의 주인은 등록이며, 반별교재는 복사 출처다. 기준 교재의 클래스/제목을
+	const regularBookIds = libraryIds(templatePage)
+	// 개별교재의 주인은 등록이며, 반별교재는 복사 출처다. 기준 교재의 클래스/제목을
 	// 복사하지 않는다. 자동화 설정 전에도 새 교재는 같은 네이밍으로 생성한다.
 	const regularBookPage = regularBookIds[0] ? await getPage(regularBookIds[0]) : null
-	const bookName = regularBookPage ? (fullBookTitle(regularBookPage, "교재명") || "정규교재 연결 필요") : "정규교재 연결 필요"
-	const registrationName = fullBookTitle(registration, PROP_TITLE)
+	const bookName = regularBookPage ? (fullBookTitle(regularBookPage, "교재명") || "라이브러리 연결 필요") : "라이브러리 연결 필요"
+	const registrationName = fullBookTitle(registration, "이름")
 	const individualTitle = `${bookName}(${registrationName})`
 
 	const properties: Record<string, unknown> = {
@@ -253,8 +199,9 @@ async function resolveInstanceForTemplate(registration: any, templatePage: any) 
 		[PROP_PROGRESS_STATUS]: { status: { name: STATUS_NEXT } },
 		[PROP_REGISTRATION_ON_BOOK]: { relation: [{ id: registrationId }] },
 	}
-	if (regularBookIds.length > 0) properties[PROP_REGULAR_BOOK] = { relation: [{ id: regularBookIds[0] }] }
-	// (v2.5.7) PROP_CLASS_ON_BOOK 는 새 개별교재에 설정하지 않는다. 기존 행의 클래스는 변경하지 않는다.
+	// 라이브러리 관계 이름은 템플릿(같은 진도교재 DB)에 있는 이름을 그대로 쓴다(새 이름 "라이브러리", 옛 이름 "정규교재").
+	if (regularBookIds.length > 0) properties[libraryKey(templatePage) ?? LIBRARY_PROP] = { relation: [{ id: regularBookIds[0] }] }
+	// PROP_CLASS_ON_BOOK 는 새 개별교재에 설정하지 않는다. 기존 행의 클래스는 변경하지 않는다.
 
 	const page = await createPage(DATA_SOURCE_PROGRESS_BOOK, properties)
 	return { instanceId: page.id, created: true }
@@ -263,35 +210,30 @@ async function resolveInstanceForTemplate(registration: any, templatePage: any) 
 // 등록에 연결된 클래스의 반별교재(템플릿) 전체를 그룹/개별 진도 규칙에 따라 연결하거나 생성한다.
 // 클래스가 없거나 템플릿이 하나도 없으면 건너뛴다 (에러로 취급하지 않음 - 클래스 세팅 전에도
 // 버튼을 눌러볼 수 있어야 하며, 그 경우 안내만 반환한다).
-//
-// (PART N-13) preloadedTemplatePages를 넘기면 getTemplatePagesForClass를 다시 호출하지 않는다 -
-// 클래스 "교재 생성" 체인이 매 학생 단계에서 이미 조회해둔 템플릿 목록을 그대로 재사용해 대상 판정과
-// 실제 생성에 드는 조회 횟수를 절반으로 줄인다. create-individual(등록 DB 개별 버튼)처럼 단건으로
-// 호출할 때는 생략하면 된다(기존과 동일하게 내부에서 조회한다).
-export async function createIndividualBooksForRegistration(
-	registrationId: string,
-	preloadedTemplatePages?: any[],
-) {
+export async function createIndividualBooksForRegistration(registrationId: string) {
 	const registration = await getPage(registrationId)
 	const classIds = relationIds(registration, PROP_CLASS)
 	if (classIds.length === 0) return { skipped: "클래스가 아직 연결되어 있지 않음" }
 
-	const { templatePages, candidateCount } = preloadedTemplatePages
-		? { templatePages: preloadedTemplatePages, candidateCount: preloadedTemplatePages.length }
-		: await getTemplatePagesForClass(classIds[0])
-	if (candidateCount === 0) return { skipped: "클래스에 반별교재(템플릿)가 아직 없음 - 먼저 진도교재 DB에서 템플릿을 만들어 클래스에 연결하세요" }
+	// (PART N-7) 클래스 페이지를 getPage로 읽어서 그 안의 "진도교재" relation을 쓰면 25개까지만
+	// 돌아온다 (Notion 페이지 조회 API의 relation 절단 제약). "진도교재"는 "클래스"<->"진도교재"
+	// 양방향 관계라서 인스턴스가 생길 때마다 이 목록에도 자동으로 끼어들기 때문에, 개별 지도처럼
+	// 학생이 쌓이는 클래스는 금방 25개를 넘기고 그 뒤 진짜 템플릿 일부가 조용히 누락된다. 그 대신
+	// 진도교재 데이터소스를 "클래스 = 이 클래스"로 직접 쿼리한다 - queryAllPages가 커서를 끝까지
+	// 따라가므로 개수 제한 없이 전부 가져온다.
+	const candidates = await queryAllPages(DATA_SOURCE_PROGRESS_BOOK, {
+		property: PROP_CLASS_ON_BOOK,
+		relation: { contains: classIds[0] },
+	})
+	if (candidates.length === 0) return { skipped: "클래스에 반별교재(템플릿)가 아직 없음 - 먼저 진도교재 DB에서 템플릿을 만들어 클래스에 연결하세요" }
+
+	// 구형 개별 인스턴스나 학생에게 직접 만든 교재를 반의 배포 기준으로 오인하지 않는다.
+	const templatePages = candidates.filter(isClassTextbookTemplate)
 	if (templatePages.length === 0) {
 		return { skipped: "클래스에 연결된 진도교재 중 진짜 템플릿이 없음 (전부 이미 생성된 개별교재 인스턴스로 보임)" }
 	}
 
-	// (PART N-13) 템플릿을 절대 동시에(concurrency로) 처리하지 않는다 - 그룹 진도 템플릿은 반 전체
-	// 학생이 공유하므로, 같은 학생이 템플릿 여러 개를 동시에 처리해도 서로 다른 템플릿이라 경쟁은
-	// 없지만, 호출부(클래스 체인)가 학생 자체를 순차로만 넘기도록 보장해야 진짜 경쟁(같은 템플릿을
-	// 여러 학생이 동시에 건드리는 것)이 사라진다. 여기서는 순서만 순차로 바꿔 코드를 단순하게 둔다.
-	const results: Array<{ instanceId: string; linked?: boolean; created?: boolean }> = []
-	for (const templatePage of templatePages) {
-		results.push(await resolveInstanceForTemplate(registration, templatePage))
-	}
+	const results = await mapWithConcurrency(templatePages, 4, (templatePage) => resolveInstanceForTemplate(registration, templatePage))
 
 	// 등록의 "진도교재" relation은 여기서 한 번만 최신 상태를 읽어서 반영한다 (동시 처리로 인한
 	// read-modify-write 유실 방지).
@@ -318,154 +260,110 @@ async function getActiveRegistrationsForClassNow(classId: string): Promise<any[]
 	return registrations.filter((reg: any) => formulaString(reg, PROP_STATUS) === STATUS_ACTIVE)
 }
 
-// ---------- (PART N-13) 클래스 "교재 생성" 버튼: 등록 1건 + 자기 호출 이어달리기 ----------
-//
-// send-class-daily-reports(수업 보고서 "일괄 전송")와 동일한 패턴. 학생을 절대 동시에 처리하지
-// 않아서 템플릿 relation 경쟁 조건이 구조적으로 사라진다. index.ts의 create-class 라우트가 최초
-// 호출과 연속 호출(continuation) 두 경우 모두 이 모듈의 함수를 쓴다.
-
-const FUNCTIONS_BASE = `${Deno.env.get("SB_URL") ?? ""}/functions/v1`
-const CLASS_TEXTBOOK_CONTINUATION_FLAG = "isContinuation"
-const CLASS_TEXTBOOK_CHAIN_BUDGET_MS = 30 * 60 * 1000
-// send-class-daily-reports와 동일하게 60초 - 30초는 Notion API가 살짝 느려지기만 해도 다음 학생
-// 호출이 타임아웃으로 끊길 여지가 있었다.
-const CLASS_TEXTBOOK_CONTINUATION_TIMEOUT_MS = 60_000
-
-export type ClassTextbookChainState = {
-	classId: string
-	remainingRegistrationIds: string[]
-	chainStartedAt: number
-	successCount: number
-	skippedCount: number
-	failedNames: string[]
+// 등록 페이지의 표시용 이름. "이름"(title) 속성이 비어있는 드문 경우에도 실패 목록/로그에 뭔가는
+// 보이도록 id 일부로 대체한다.
+function registrationLabel(reg: any): string {
+	return titleText(reg, "이름") ?? `(이름 없음: ${String(reg?.id ?? "").slice(0, 8)})`
 }
 
-function classTextbookFinalMessage(state: ClassTextbookChainState): string | null {
-	if (!state.failedNames.length) return null
-	return `${state.failedNames.length}명 실패: ${state.failedNames.join(", ")}`
+// 반별교재가 있으면 복사된 인스턴스다. 출처 없이 등록에 직접 연결된 개별교재도
+// 배포 기준이 아니다. 그룹 교재는 여러 등록이 연결된 뒤에도 계속 배포 기준으로 유지한다.
+function isClassTextbookTemplate(page: any): boolean {
+	if (relationIds(page, PROP_TEMPLATE_RELATION).length > 0) return false
+	const mode = selectName(page, PROP_PROGRESS_MODE) ?? "그룹 진도"
+	return mode === "그룹 진도" || relationIds(page, PROP_REGISTRATION_ON_BOOK).length === 0
 }
 
-async function callNextClassTextbookChain(state: ClassTextbookChainState, adminKey: string): Promise<void> {
-	const controller = new AbortController()
-	const timeoutId = setTimeout(() => controller.abort(), CLASS_TEXTBOOK_CONTINUATION_TIMEOUT_MS)
-	try {
-		const res = await fetch(`${FUNCTIONS_BASE}/sync-registration-textbook/create-class`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json", "x-admin-key": adminKey },
-			body: JSON.stringify({ ...state, [CLASS_TEXTBOOK_CONTINUATION_FLAG]: true }),
-			signal: controller.signal,
-		})
-		if (!res.ok) throw new Error(`다음 학생 호출 실패: ${res.status} ${await res.text()}`)
-	} finally {
-		clearTimeout(timeoutId)
-	}
+// 클래스 직접 연결은 반의 기준 교재 조회에만 사용한다. 구형 개별교재가 섞이면 위에서 제외한다.
+async function getClassTextbookPages(classId: string): Promise<any[]> {
+	return await queryAllPages(DATA_SOURCE_PROGRESS_BOOK, {
+		property: PROP_CLASS_ON_BOOK,
+		relation: { contains: classId },
+	})
 }
 
-async function finishClassTextbookChain(state: ClassTextbookChainState, message: string | null): Promise<void> {
-	try {
-		if (message) await markError(state.classId, CLASS_TEXTBOOK_STATUS_SPEC, message)
-		else await markDone(state.classId, CLASS_TEXTBOOK_STATUS_SPEC)
-	} catch (_e) {
-		// 상태 표시 실패가 이미 처리된 개별 학생 결과를 바꾸지는 않는다.
+// (PART N-12) 템플릿 하나가 특정 등록에 대해 이미 "완전히 연결됐는지" 판정한다.
+// - 그룹 진도: 템플릿 자신의 "등록" relation에 이 등록이 들어있고, 동시에 이 등록의 "진도교재"에도
+//   템플릿 자신이 들어있어야 한다. 양쪽을 다 확인하므로, 예전 경쟁(race) 버그로 한쪽 방향만 연결된
+//   잔존 상태도 "아직 미완료"로 잡혀서 재실행 시 스스로 복구된다.
+// - 개별 진도: (이 등록 + 이 템플릿) 조합의 인스턴스가 instancePages 안에 존재하고, 그 인스턴스가
+//   이 등록의 "진도교재"에 들어있어야 한다.
+function isTemplateSatisfiedForRegistration(
+	templatePage: any,
+	instancePages: any[],
+	registrationId: string,
+	existingBookIds: string[],
+): boolean {
+	const mode = selectName(templatePage, PROP_PROGRESS_MODE) ?? "그룹 진도"
+	if (mode === "그룹 진도") {
+		const regLinkedOnTemplate = relationIds(templatePage, PROP_REGISTRATION_ON_BOOK).includes(registrationId)
+		const templateLinkedOnReg = existingBookIds.includes(templatePage.id)
+		return regLinkedOnTemplate && templateLinkedOnReg
 	}
+	const instance = instancePages.find(
+		(p) =>
+			relationIds(p, PROP_TEMPLATE_RELATION).includes(templatePage.id) &&
+			relationIds(p, PROP_REGISTRATION_ON_BOOK).includes(registrationId),
+	)
+	if (!instance) return false
+	return existingBookIds.includes(instance.id)
 }
 
-// 체인의 한 스텝: 학생 1명 처리(또는 건너뛰기) + 다음 학생 자기 호출. index.ts가 최초 호출과
-// continuation 호출 양쪽 모두에서 이 함수를 runInBackground로 감싸 호출한다.
-export async function processClassTextbookChainStep(state: ClassTextbookChainState, adminKey: string): Promise<void> {
-	if (Date.now() - state.chainStartedAt > CLASS_TEXTBOOK_CHAIN_BUDGET_MS) {
-		await finishClassTextbookChain(
-			state,
-			`전체 처리 한도(${Math.round(CLASS_TEXTBOOK_CHAIN_BUDGET_MS / 60000)}분)를 초과했습니다. 완료 ${state.successCount}명, 건너뜀 ${state.skippedCount}명, 실패 ${state.failedNames.length}명. 버튼을 다시 눌러 남은 학생을 이어서 처리하세요.`,
-		)
-		return
-	}
-
-	const registrationId = state.remainingRegistrationIds.shift()
-	if (!registrationId) {
-		await finishClassTextbookChain(state, classTextbookFinalMessage(state))
-		return
-	}
-
-	try {
-		// (3-2) "교재 상태"가 아니라, 클래스의 템플릿 목록과 이 등록의 실제 relation 연결 상태를
-		// 매번 새로 조회해서 직접 비교한다 - 항상 최신 상태를 기준으로 판정한다.
-		const { templatePages } = await getTemplatePagesForClass(state.classId)
-		const needsSync = templatePages.length > 0 && (await registrationNeedsTextbookSync(registrationId, templatePages))
-
-		if (!needsSync) {
-			state.skippedCount++
-		} else {
-			await markRunning(registrationId, TEXTBOOK_STATUS_SPEC)
-			try {
-				await createIndividualBooksForRegistration(registrationId, templatePages)
-				await markDone(registrationId, TEXTBOOK_STATUS_SPEC)
-				state.successCount++
-			} catch (err) {
-				await markError(registrationId, TEXTBOOK_STATUS_SPEC, (err as Error).message)
-				throw err
-			}
-		}
-	} catch (err) {
-		let name = registrationId
-		try {
-			const page = await getPage(registrationId)
-			name = titleText(page, PROP_TITLE) ?? registrationId
-		} catch (_e) {
-			// 이름을 못 읽어도 다음 학생 처리는 계속한다.
-		}
-		state.failedNames.push(name)
-	}
-
-	if (!state.remainingRegistrationIds.length) {
-		await finishClassTextbookChain(state, classTextbookFinalMessage(state))
-		return
-	}
-
-	try {
-		await callNextClassTextbookChain(state, adminKey)
-	} catch (err) {
-		await finishClassTextbookChain(
-			state,
-			`체인 중단: ${(err as Error).message}. 버튼을 다시 누르면 처리된 학생은 건너뛰고 이어서 처리합니다.`,
-		)
-	}
-}
-
-// index.ts의 create-class 라우트가 최초 버튼 클릭 시 호출하는 진입점. 이미 처리 중이면
-// already_processing을 바로 응답하고, 아니면 "작업중"으로 표시한 뒤 백그라운드에서 체인을
-// 시작하고 즉시 202를 응답한다 (Notion 버튼이 응답을 오래 기다리지 않도록).
-export async function startClassTextbookChain(classId: string, adminKey: string): Promise<Response> {
-	const classPage = await getPage(classId)
-	if (isRunning(classPage, CLASS_TEXTBOOK_STATUS_SPEC)) {
-		return new Response(JSON.stringify({ ok: true, message: "already_processing", classId }), {
-			status: 200,
-			headers: { "Content-Type": "application/json" },
-		})
-	}
-
-	await markRunning(classId, CLASS_TEXTBOOK_STATUS_SPEC)
-
+// (PART N-12) 클래스 "교재 생성" 버튼 순차 이어달리기(index.ts)가 매 홉마다 "아직 처리할 등록이
+// 남았는지"를 확인하는 데 쓴다. 이전에는 "교재 상태"(select) 값만 보고 판정했는데, 그러면 클래스에
+// 템플릿이 "나중에 추가"됐을 때 이미 "완료"로 표시된 기존 학생들을 영원히 다시 못 잡는 구조적 한계가
+// 있었다(2026-10-04 PART N-11 실사용 검증에서 드러남). 그래서 이제는 클래스의 템플릿 목록과 각
+// 등록의 실제 연결 상태를 직접 비교한다 -- 모든 템플릿이 이미 충족된(isTemplateSatisfiedForRegistration)
+// 등록은 "클래스와 학생의 진도교재가 같음" -> 빠르게 건너뛰고, 하나라도 빠진 등록만 pending으로
+// 잡는다. 템플릿이 아예 없는 클래스(세팅 전)는 할 일이 없으므로 전원 건너뛴다. 이름(가나다) 순으로
+// 정렬해서 처리 순서/진행 표시("3/24 처리 중")가 매번 같은 순서로 예측 가능하게 보이게 한다.
+export async function getPendingClassTextbookRegistrations(classId: string): Promise<any[]> {
 	const registrations = await getActiveRegistrationsForClassNow(classId)
-	if (!registrations.length) {
-		await finishClassTextbookChain(
-			{ classId, remainingRegistrationIds: [], chainStartedAt: Date.now(), successCount: 0, skippedCount: 0, failedNames: [] },
-			null,
-		)
-		return respondAccepted({ classId, total: 0 })
-	}
+	if (registrations.length === 0) return []
 
-	const state: ClassTextbookChainState = {
-		classId,
-		remainingRegistrationIds: registrations.map((r: any) => r.id),
-		chainStartedAt: Date.now(),
-		successCount: 0,
-		skippedCount: 0,
-		failedNames: [],
+	const classBooks = await getClassTextbookPages(classId)
+	const templatePages = classBooks.filter(isClassTextbookTemplate)
+	// 새 개별교재는 클래스가 비어 있으므로 classBooks 안에서 찾으면 항상 누락으로 판정된다.
+	// 복사 출처로 조회하고, 아래에서 등록까지 대조한다. 구형 클래스 연결 인스턴스도 함께 찾는다.
+	const individualTemplateIds = templatePages
+		.filter((p: any) => selectName(p, PROP_PROGRESS_MODE) === "개별 진도")
+		.map((p: any) => p.id as string)
+	const batches: string[][] = []
+	for (let i = 0; i < individualTemplateIds.length; i += 50) {
+		batches.push(individualTemplateIds.slice(i, i + 50))
 	}
+	const instancePages = (await mapWithConcurrency(batches, 4, (ids) => queryAllPages(DATA_SOURCE_PROGRESS_BOOK, {
+		or: ids.map((id) => ({ property: PROP_TEMPLATE_RELATION, relation: { contains: id } })),
+	}))).flat()
 
-	runInBackground(() => processClassTextbookChainStep(state, adminKey))
-	return respondAccepted({ classId, total: state.remainingRegistrationIds.length })
+	const pending = templatePages.length === 0
+		? []
+		: registrations.filter((reg: any) => {
+			const existingBookIds = relationIds(reg, PROP_REGISTRATION_BOOKS)
+			return !templatePages.every((t: any) => isTemplateSatisfiedForRegistration(t, instancePages, reg.id, existingBookIds))
+		})
+	pending.sort((a: any, b: any) => registrationLabel(a).localeCompare(registrationLabel(b), "ko"))
+	return pending
+}
+
+// 등록 1건을 처리하면서 등록(학원) DB의 "교재 상태"(개별 "개별교재 생성" 버튼과 동일한 속성)도 함께
+// 갱신한다. 별도 Notion 스키마 변경 없이, 클래스 "교재 생성" 버튼으로 처리되는 중에도 각 학생의
+// 등록 페이지에서 실시간 진행 상황("🔄 작업중" -> "✅ 완료"/"⚠️ 오류")을 볼 수 있게 해준다.
+export async function createBooksForOneRegistrationWithStatus(
+	reg: any,
+): Promise<{ id: string; label: string; ok: boolean; note: string }> {
+	const label = registrationLabel(reg)
+	try {
+		await markRunning(reg.id, TEXTBOOK_STATUS_SPEC)
+		const result: any = await createIndividualBooksForRegistration(reg.id)
+		await markDone(reg.id, TEXTBOOK_STATUS_SPEC)
+		const note = result && typeof result.skipped === "string" ? result.skipped : `처리 ${result?.results?.length ?? 0}건`
+		return { id: reg.id, label, ok: true, note }
+	} catch (err) {
+		const message = (err as Error)?.message ?? String(err)
+		await markError(reg.id, TEXTBOOK_STATUS_SPEC, message).catch(() => {})
+		return { id: reg.id, label, ok: false, note: message }
+	}
 }
 
 // 종료 처리 시 교재 정리: "다음 교재" 상태 + 학습기록 없음 인 인스턴스만 정리 대상.

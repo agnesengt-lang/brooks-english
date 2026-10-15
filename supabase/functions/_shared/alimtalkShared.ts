@@ -1,3 +1,4 @@
+import { securityEnabled, currentInternalKey } from "./adminSecurity.ts"
 // _shared/alimtalkShared.ts
 //
 // send-daily-report / send-tuition-notice / send-report / send-class-daily-reports 네 함수가
@@ -65,6 +66,7 @@ const SERVICE_ROLE_KEY = Deno.env.get("SB_SERVICE_ROLE_KEY")!
 const ADMIN_SECRET = Deno.env.get("ADMIN_SECRET")!
 
 export async function getEffectiveAdminKey(): Promise<string> {
+  if (securityEnabled()) return await currentInternalKey()
   try {
     const res = await fetch(SUPABASE_URL + "/rest/v1/admin_settings?select=admin_key&id=eq.1", {
       headers: {
@@ -222,10 +224,6 @@ export async function sendDailyReportAlimtalk(payload: {
         variables: payload.variables,
         disableSms: false,
       },
-      // [FIX, 2026-09-30] allowDuplicates를 안 넘기면 Solapi가 "짧은 시간 안에 동일 수신번호로
-      // 동일 내용 반복 발송"을 접수 거부한다. 관리자가 실패 건을 바로 재시도하거나, 같은 학생의
-      // 일일 보고서를 다시 보내야 하는 정상적인 경우까지 막혀버리므로 허용한다. 실제 발송 자체의
-      // 중복 방지는 "전송완료 체크" 체크박스가 이미 담당한다.
     }, { allowDuplicates: true }))
   }
   return results

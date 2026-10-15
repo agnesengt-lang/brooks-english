@@ -173,10 +173,10 @@ if ! grep -q '.reg-header-bar { min-height: 56px; padding: 6px 10px; box-sizing:
   fail=1
 fi
 
-# 14) 기간 제목은 좌우 동일 폭 3열 중앙 정렬, 메뉴 닫기는 투명 헤더 버튼, 새로고침은 상세 화면에서도
-#     메인과 동일한 플로팅 버튼 위치를 유지하며, 본문은 하단 안전 여백을 사용한다.
-#     (2026-09-19: 상세 화면 전용 새로고침 헤더 버튼은 폐지하고 항상 플로팅 버튼만 사용하도록 변경)
-if ! grep -q 'grid-template-columns: clamp(82px, 18vw, 120px) minmax(0, 1fr) clamp(82px, 18vw, 120px)' student_report.html || grep -q 'body.has-detail-header .global-sync-fab' student_report.html || ! grep -q 'body.has-tabbar .reg-tab-content { padding-bottom: calc(96px' student_report.html || ! grep -q 'class="menu-close".*<svg class="header-icon"' student_report.html || ! grep -q 'has-detail-header.*view === "detail" || view === "book"' student_report_part2.js; then
+# 14) 기간 제목은 좌우 동일 폭 3열 중앙 정렬, 메뉴 닫기는 투명 헤더 버튼, 본문은 하단 안전 여백을 사용한다.
+#     새로고침은 하나의 전역 버튼을 화면마다 오른쪽 위에 둔다: 첫 화면은 메뉴(≡) 왼쪽, 반·교재 상세는 접힌 헤더 오른쪽.
+#     (2026-09-19 떠 있는 버튼으로 통일 → 2026-10-12 카드를 가려 오른쪽 위 아이콘으로 변경. 상세 화면 전용 버튼을 따로 만들지 않는다)
+if ! grep -q 'grid-template-columns: clamp(82px, 18vw, 120px) minmax(0, 1fr) clamp(82px, 18vw, 120px)' student_report.html || ! grep -q 'body.has-detail-header .global-sync-fab { top: 6px; right: 10px;' student_report.html || grep -q 'class="header-sync' student_report_part1.js student_report_part2.js || ! grep -q 'body.has-tabbar .reg-tab-content { padding-bottom: calc(96px' student_report.html || ! grep -q 'class="menu-close".*<svg class="header-icon"' student_report.html || ! grep -q 'has-detail-header.*view === "detail" || view === "book"' student_report_part2.js; then
   echo "❌ 학생 리포트: 기간 중앙 정렬·상세 헤더 버튼·하단 안전 여백 규칙이 빠졌습니다."
   fail=1
 fi
@@ -210,12 +210,17 @@ fi
 
 # 17) Notion 업로드 PDF/파일은 만료 URL을 캐시에만 의존하면 안 된다. blockId를 저장하고,
 #     학생 보고서 토큰으로 접근 권한을 검증한 뒤 최신 URL을 발급하는 함수를 유지한다.
-if ! grep -q 'type === "pdf" || type === "file"' supabase/functions/_shared/reportCacheBuilder.ts; then
-  echo "❌ reportCacheBuilder.ts: PDF/파일 블록 수집이 빠졌습니다."
+#     (v2.5.95) 본문 블록 변환은 feedBody.ts로 옮겼다. 리포트 캐시는 그 파일의 readPageBodyBlocks를 쓴다.
+if ! grep -q 'import { readPageBodyBlocks } from "./feedBody.ts"' supabase/functions/_shared/reportCacheBuilder.ts; then
+  echo "❌ reportCacheBuilder.ts: 학습기록 본문 변환(feedBody.ts)을 쓰지 않습니다."
   fail=1
 fi
-if ! grep -q 'blockId: String(b.id' supabase/functions/_shared/reportCacheBuilder.ts; then
-  echo "❌ reportCacheBuilder.ts: 만료 URL 갱신에 필요한 파일 blockId가 없습니다."
+if ! grep -q 'type === "pdf" || type === "file"' supabase/functions/_shared/feedBody.ts; then
+  echo "❌ feedBody.ts: PDF/파일 블록 수집이 빠졌습니다."
+  fail=1
+fi
+if ! grep -q 'blockId: String(b.id' supabase/functions/_shared/feedBody.ts; then
+  echo "❌ feedBody.ts: 만료 URL 갱신에 필요한 파일 blockId가 없습니다."
   fail=1
 fi
 if ! grep -q 'containsBlockId(row.registration_detail' supabase/functions/get-report-file/index.ts; then
@@ -226,6 +231,42 @@ if ! grep -q 'get-report-file' student_report_part1.js; then
   echo "❌ student_report_part1.js: 최신 파일 URL 요청 코드가 빠졌습니다."
   fail=1
 fi
+
+# 18) 폐기한 웹훅 함수가 코드·현재 기준 문서에 다시 들어오면 안 된다(v2.5.21).
+#     옛 문서를 근거로 체크리스트·매핑표에 되살아나는 일이 반복됐다. 과거 패치노트
+#     (docs/updates)와 CHANGELOG는 이력이므로 검사하지 않는다.
+RETIRED_WEBHOOKS='sync-registration-timetable|sync-student-report|mark-report-source-dirty|sync-school-schedules'
+retired_hits=$(grep -rnE "$RETIRED_WEBHOOKS" \
+  --include='*.ts' --include='*.js' --include='*.html' --include='*.md' --include='*.sql' \
+  --include='*.yml' --include='*.py' --include='*.cjs' \
+  --exclude-dir=updates --exclude-dir=node_modules --exclude-dir=.git --exclude=CHANGELOG.md \
+  --exclude=check-known-regressions.sh . || true)
+if [ -n "$retired_hits" ]; then
+  echo "❌ 폐기한 웹훅 함수 이름이 다시 들어왔습니다. 되살리려면 이 검사부터 고치세요:"
+  echo "$retired_hits"
+  fail=1
+fi
+
+# 출석(학원) DB의 속성 이름은 "선생님 한마디"다. 오타 "한마때"로 읽으면 출석의 선생님 한마디가 리포트에 들어가지 않는다(v2.5.61).
+if grep -rq '선생님 한마때' supabase/functions; then
+  echo "❌ 출석의 선생님 한마디를 오타 속성 이름(한마때)으로 읽고 있습니다."
+  fail=1
+fi
+
+# 학원별 연결 값(Supabase 주소·공개 키)은 hada_config.js 한 파일에만 둔다. 화면 파일에 다시 넣으면 업데이트 때
+# 화면 파일을 통째로 바꿀 수 없고 원본 값이 운영에 섞인다(v2.5.63).
+web_files=$(git ls-files '*.html' '*.js' '*.json' | grep -v '^supabase/' | grep -v '^tests/' | grep -v '^hada_config.js$')
+if grep -lE 'https://[a-z0-9]+.supabase.co|eyJhbGciOi' $web_files 2>/dev/null | grep -q .; then
+  echo "❌ 화면 파일에 Supabase 주소나 공개 키가 직접 들어 있습니다. hada_config.js에서 읽게 하세요:"
+  grep -lE 'https://[a-z0-9]+.supabase.co|eyJhbGciOi' $web_files
+  fail=1
+fi
+for page in student_report.html attendance_kiosk.html legal_documents.html school_search.html library.html admin_settings.html; do
+  if ! grep -q '<script src="hada_config.js"></script>' "$page"; then
+    echo "❌ $page 가 hada_config.js를 불러오지 않습니다."
+    fail=1
+  fi
+done
 
 if [ "$fail" != 0 ]; then
   echo ""

@@ -1,22 +1,75 @@
 <!doctype html>
-<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>학교 검색 · 하다 학원관리</title>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>학교 검색 · 하다 학원관리</title><link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%236B5D4D%22%20stroke-width%3D%222.4%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cstyle%3E%40media(prefers-color-scheme%3Adark)%7Bsvg%7Bstroke%3A%23E6D7C4%7D%7D%3C%2Fstyle%3E%3Ccircle%20cx%3D%2211%22%20cy%3D%2211%22%20r%3D%228%22%2F%3E%3Cline%20x1%3D%2221%22%20y1%3D%2221%22%20x2%3D%2216.65%22%20y2%3D%2216.65%22%2F%3E%3C%2Fsvg%3E">
+<link rel="stylesheet" href="assets/hada-ui.css?v=beb0d95e">
 <style>
-:root{color-scheme:light dark;--bg:#fff;--surface:#f9f8f7;--text:#2c2c2b;--muted:#625f5a;--line:#e6e5e3;--blue:#1768b8;--soft:#e5f2fc;--error:#ac332b}*{box-sizing:border-box}body{word-break:keep-all;margin:0;background:var(--bg);color:var(--text);font:16px/1.55 system-ui,-apple-system,sans-serif}main{max-width:760px;margin:48px auto;padding:0 24px}header{margin-bottom:32px}.brand{font-size:14px;font-weight:700;color:var(--blue);letter-spacing:.06em}h1{font-size:32px;letter-spacing:-.04em;margin:8px 0}h2{font-size:21px;margin:0 0 16px}p{margin:8px 0;color:var(--muted)}section{border:1px solid var(--line);border-radius:12px;padding:24px;margin-bottom:24px;background:var(--surface)}label{display:block;font-weight:600;margin-bottom:8px}input,select,button{font:inherit;border-radius:8px;min-height:44px}input,select{padding:10px 12px;border:1px solid var(--line);background:var(--bg);color:var(--text);width:100%}button{padding:10px 18px;border:1px solid var(--blue);background:var(--blue);color:white;cursor:pointer;font-weight:600}button:disabled{opacity:.5;cursor:wait}.secondary{background:transparent;color:var(--blue)}.row{display:flex;gap:12px;align-items:end}.row>div{flex:1}.row button{flex-shrink:0}small{display:block;margin-top:8px;font-size:14px;color:var(--muted)}:focus-visible{outline:3px solid var(--blue);outline-offset:3px}.notice{border-radius:8px;background:var(--soft);padding:16px;margin:16px 0;color:var(--text)}#status{white-space:pre-wrap;overflow-wrap:anywhere}#status.error{color:var(--error)}.result{padding:20px 0;border-top:1px solid var(--line)}.result strong{font-size:19px}.result button{margin-top:12px}.result a{display:inline-block;margin:8px 0;color:var(--blue)}[hidden]{display:none!important}@media(max-width:540px){main{margin:24px auto;padding:0 16px}section{padding:20px}.row{flex-direction:column;align-items:stretch}.row>div{width:100%}h1{font-size:28px}}@media(prefers-color-scheme:dark){:root{--bg:#191919;--surface:#202020;--text:#fff;--muted:#c4c1bc;--line:#555;--blue:#5e9fe8;--soft:#203347;--error:#ff9d93}button{color:#111}.secondary{color:var(--blue)}}
-</style></head><body><main>
-<header><div class="brand">HaDa · 학원관리</div><h1>학교 검색·연결</h1><p>주소를 확인하고 정확한 학교를 선택하세요.<br>기존 학생 연결과 학교 페이지 이름은 그대로 유지합니다.</p></header>
-<section id="login"><h2>관리자 확인</h2><form id="loginForm"><label for="key">관리자 키</label><div class="row"><div><input id="key" type="password" autocomplete="current-password" required></div><button>확인</button></div><small>기존 학원 웹앱의 관리자 키를 사용합니다. 이 화면은 키를 저장하지 않습니다.</small></form></section>
-<section id="workspace" hidden><div class="row"><div><label for="target">연결할 Notion 학교 페이지</label><select id="target"></select></div><button id="logout" class="secondary">로기아웃</button></div><div class="notice">검색 결과 선택 후 교육정 · 학교 코뗜, 주소, 홈페이지를 저장합니다. 학사일정은 Notion의 ‘학사일정 가져오기’ 버튼으로 가져올니다.</div><form id="searchForm"><div class="row"><div><label for="query">학교명</label><input id="query" placeholder="예: 천왕중학교" required minlength="2" maxlength="80"></div><div><label for="region">지역 · 선택 사항</label><input id="region" placeholder="예: 구로구" maxlength="80"></div><button>검색</button></div></form><div id="results"></div></section>
-<p id="status" role="status" aria-live="polite">Notion 학교 페이지의 ‘학교 검색’ 릭크에서 열면 해당 페이지가 자동 선택됩니다.</p>
-</main><script>
+/* 학교 검색 화면 전용. 값은 assets/hada-ui.css 토큰만 쓴다(docs/DESIGN.md). */
+.card h2{margin-bottom:var(--space-2)}
+.field-row{display:flex;gap:var(--space-3);align-items:flex-end;margin-top:var(--space-4)}
+.field-row>div{flex:1;min-width:0}
+.field-row label{margin-top:0}
+.field-row button{flex-shrink:0;width:auto}
+#workspace .status{margin:var(--space-4) 0 0}
+#status{white-space:pre-wrap;overflow-wrap:anywhere}
+/* 검색 결과: 왼쪽 학교 정보, 오른쪽 연결 버튼 한 줄(좁은 화면은 아래로) */
+.result{display:flex;gap:var(--space-4);align-items:center;justify-content:space-between;padding:var(--space-5) 0;border-top:1px solid var(--divider)}
+.result:first-child{margin-top:var(--space-5)}
+.result-info{flex:1;min-width:0}
+.result strong{display:block;font-size:var(--text-lead);overflow-wrap:anywhere}
+.result p{margin:var(--space-1) 0 0;color:var(--text-muted);overflow-wrap:anywhere}
+.result .link-chip{margin-top:var(--space-2)}
+.result>button{flex-shrink:0}
+/* 연결 완료: 같은 줄 오른쪽에 Notion 열기(주 동작)와 다시 찾기 */
+.done-actions{display:flex;gap:var(--space-3);flex-shrink:0}
+/* 나이스 이용약관 제11조 출처 표시: 카드 맨 아래 */
+.source-note{margin:var(--space-5) 0 0}
+.done-actions a.primary{display:inline-flex;align-items:center;justify-content:center;width:auto;text-decoration:none}
+@media(max-width:700px){
+ .field-row{flex-direction:column;align-items:stretch}.field-row button{width:100%}
+ .result{flex-direction:column;align-items:stretch}.result>button{width:100%}
+ .done-actions{flex-direction:column}.done-actions>*{width:100%}
+}
+</style></head><body><div class="shell">
+<nav class="top" aria-label="서비스 정보"><div class="brand"><img class="logo" src="assets/brand/hada-wordmark.png" alt="HADA" width="96" height="36"><div class="wordmark">하다<span>학원관리</span></div></div><div class="app-nav" id="app-nav"></div><div class="topright"><button class="ghost" id="logout" type="button" hidden>로그아웃</button></div></nav>
+<header><h1>학교 검색·연결</h1><p class="muted">주소를 확인하고 정확한 학교를 선택하세요. 기존 학생 연결과 학교 페이지 이름은 그대로 유지합니다.</p></header>
+<p class="notice info" id="status" role="status" aria-live="polite">Notion 학교 페이지의 ‘학교 검색’ 링크에서 열면 해당 페이지가 자동 선택됩니다.</p>
+<main>
+<section class="card" id="login"><div class="narrow"><h2>관리자 확인</h2><form id="loginForm"><label for="key">관리자 비밀번호</label><input id="key" type="password" autocomplete="current-password" required autofocus><p class="help">관리자 설정과 같은 비밀번호입니다. 로그인은 관리자 설정·법정 서류와 함께 쓰이고, 이 탭을 닫거나 로그아웃하면 해제됩니다.</p><button class="primary">확인</button></form></div></section>
+<section class="card" id="workspace" hidden>
+<h2>학교 연결</h2>
+<div class="field-row"><div><label for="target">연결할 Notion 학교 페이지</label><select id="target"></select></div></div>
+<div class="status">검색 결과 선택 후 교육청·학교 코드, 주소, 홈페이지를 저장합니다. 학사일정은 Notion의 ‘학사일정 가져오기’ 버튼으로 가져옵니다.</div>
+<form id="searchForm"><div class="field-row"><div><label for="query">학교명</label><input id="query" placeholder="예: 천왕중학교" required minlength="2" maxlength="80"></div><div><label for="region">지역 · 선택 사항</label><input id="region" placeholder="예: 구로구" maxlength="80"></div><button class="primary">검색</button></div></form>
+<div id="results"></div>
+<p class="help source-note">학교 정보 출처: 나이스 교육정보 개방 포털</p>
+</section>
+</main>
+<p class="foot"><strong>비밀번호는 타인에게 전달하지 마세요.</strong> 공용 기기에서는 사용 후 창을 닫으세요.</p>
+</div>
+<script src="assets/hada-shortcuts.js?v=e1c30e10"></script><script src="hada_config.js"></script><script src="admin_auth.js?v=4ffde89c"></script>
+<script>
 'use strict';
-const ENDPOINT='https://dtltoanvjgrqkmsqxhvh.supabase.co/functions/v1/school-api';
+// 학원 연결 설정은 hada_config.js에서 읽는다(HadaAdminAuth.config). 잘못되면 호출 시 오류 문구로 알린다.
+const endpoint=()=>HadaAdminAuth.config().url+'/functions/v1/school-api';
 const $=id=>document.getElementById(id);let adminKey='',pages=[];
-function status(text,error=false){$('status').textContent=text;$('status').classList.toggle('error',error)}
-async function api(body){const r=await fetch(ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json','x-admin-key':adminKey},body:JSON.stringify(body)});let data;try{data=await r.json()}catch{throw new Error('서버 응답을 읽지 못했습니다. 배포 상태를 확인하세요.')}if(!r.ok)throw new Error(data.error||'인증 또는 연결 실패');return data}
-function busy(form,on){form.querySelectorAll('button').forEach(b=>b.disabled=on)}
-$('loginForm').addEventListener('submit',async e=>{e.preventDefault();busy(e.target,true);status('관리자 확인 중…');adminKey=$('key').value;try{const data=await api({action:'meta'});pages=data.schools;$('target').replaceChildren();pages.forEach(p=>{const o=document.createElement('option');o.value=p.id;o.textContent=p.name+(p.address?' · '+p.address:'');$('target').append(o)});if(!pages.length)throw new Error('어선 Notion 학교 DB에 학교 페이지를 추가하세요.');const requested=new URLSearchParams(location.search).get('pageId');if(requested){const p=pages.find(p=>p.id.replaceAll('-','')===requested.replaceAll('-',''));if(!p)throw new Error('요정한 페이지가 학교 DB에 없습니다.');$('target').value=p.id}chooseTarget();$('login').hidden=true;$('workspace').hidden=false;$('key').value='';status('학교명과 주소를 확인해 연결하세요.')}catch(e){adminKey='';status(e.message,true)}finally{busy(e.target,false)}});
+// kind: info(평소 안내·진행 중) / success(연결 완료) / error(실패) — docs/DESIGN.md 알림 줄
+function status(text,kind='info'){const el=$('status');el.textContent=text;['info','success','error'].forEach(k=>el.classList.toggle(k,k===kind))}
+async function api(body){const r=await fetch(endpoint(),{method:'POST',headers:{'Content-Type':'application/json','x-admin-key':adminKey},body:JSON.stringify(body)});let data;try{data=await r.json()}catch{throw new Error('서버 응답을 읽지 못했습니다. 배포 상태를 확인하세요.')}if(!r.ok)throw new Error(data.error||'인증 또는 연결 실패');return data}
+function busy(form,on){form.querySelectorAll('button').forEach(b=>{b.disabled=on;b.classList.toggle('loading',on)})}
+function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
+// 이름이 이미 종류로 끝나면(예시고등학교 · 고등학교) 종류를 다시 붙이지 않는다.
+function schoolTitle(s){return s.kind&&!String(s.name).endsWith(s.kind)?s.name+' · '+s.kind:s.name}
+// 로그인 후 화면: 학교 페이지 목록을 받아 Notion 링크로 넘어온 페이지를 고른다.
+async function openWorkspace(){const data=await api({action:'meta'});pages=data.schools;$('target').replaceChildren();pages.forEach(p=>{const o=document.createElement('option');o.value=p.id;o.textContent=p.name+(p.address?' · '+p.address:'');$('target').append(o)});if(!pages.length)throw new Error('먼저 Notion 학교 DB에 학교 페이지를 추가하세요.');const requested=new URLSearchParams(location.search).get('pageId');if(requested){const p=pages.find(p=>p.id.replaceAll('-','')===requested.replaceAll('-',''));if(!p)throw new Error('요청한 페이지가 학교 DB에 없습니다.');$('target').value=p.id}chooseTarget();$('login').hidden=true;$('workspace').hidden=false;$('logout').hidden=false;$('key').value='';status('학교명과 주소를 확인해 연결하세요.');$('region').focus()}
+$('loginForm').addEventListener('submit',async e=>{e.preventDefault();busy(e.target,true);status('관리자 확인 중…');adminKey=$('key').value;try{adminKey=await HadaAdminAuth.login(HadaAdminAuth.config().url,adminKey);await openWorkspace();HadaAdminAuth.saveSession(adminKey)}catch(e){adminKey='';status(e.message,'error')}finally{busy(e.target,false)}});
+// 같은 탭에서 관리자 설정·법정 서류에 로그인해 두었으면 비밀번호를 다시 묻지 않는다(admin_auth.js). 만료됐으면 로그인 화면으로.
+(async()=>{const saved=HadaAdminAuth.savedSession();if(!saved)return;adminKey=saved;$('login').hidden=true;status('로그인 정보를 확인하는 중…');try{await openWorkspace()}catch(e){adminKey='';HadaAdminAuth.saveSession('');$('login').hidden=false;$('key').focus();status('다시 로그인해 주세요. ('+e.message+')','error')}})();
 function chooseTarget(){const p=pages.find(p=>p.id===$('target').value);$('query').value=p?.name||'';$('results').replaceChildren()}
 $('target').addEventListener('change',chooseTarget);
-$('logout').onclick=()=>{adminKey='';pages=[];$('workspace').hidden=true;$('login').hidden=false;$('results').replaceChildren();status('로기아웃했습니다.')};
-$('searchForm').addEventListener('submit',async e=>{e.preventDefault();busy(e.target,true);$('results').replaceChildren();status('나이스에서 검색 중…');const targetId=$('target').value;try{const data=await api({action:'search',query:$('query').value,region:$('region').value});status(data.schools.length?data.schools.length+'개 학교를 찾았습니다. 지역과 주소를 확인하세요.':'검색 결과가 없습니다. 학교명 또는 지역을 다시 확인하세요.');for(const s of data.schools){const box=document.createElement('article');box.className='result';const title=document.createElement('strong');title.textContent=s.name+' · '+s.kind;const addr=document.createElement('p');addr.textContent=s.address;box.append(title,addr);if(s.website){const a=document.createElement('a');a.href=s.website;a.target='_blank';a.rel='noopener noreferrer';a.textContent='학교 홈페이지 확인';box.append(a,document.createElement('br'))}const b=document.createElement('button');b.textContent='이 학교로 연결';b.onclick=async()=>{const p=pages.find(p=>p.id===targetId);if(!confirm(`Notion ‘${p?.name}’ 페이지를 아래 학교와 연결할까요?\n${s.name}\n${s.address}\n기존 이름과 학생 관계는 유지됩니다.`))return;const buttons=[...$('results').querySelectorAll('button')];buttons.forEach(x=>x.disabled=true);status('학교 정보 저장 중…');try{const result=await api({action:'link',pageId:targetId,office:s.office,code:s.code});status(result.name+' · '+result.message);const a=document.createElement('a');a.href='https://app.notion.com/p/'+targetId.replaceAll('-','');a.textContent='Notion 학교 페이지 열기';$('results').replaceChildren(a)}catch(e){status(e.message,true);buttons.forEach(x=>x.disabled=false)}};box.append(b);$('results').append(box)}}catch(e){status(e.message,true)}finally{busy(e.target,false)}});
+$('logout').onclick=()=>{adminKey='';pages=[];HadaAdminAuth.saveSession('');$('workspace').hidden=true;$('logout').hidden=true;$('login').hidden=false;$('results').replaceChildren();status('로그아웃했습니다.');$('key').focus()};
+function showLinked(targetId,s,result){
+ const box=el('article','result done');const info=el('div','result-info');info.append(el('strong',null,schoolTitle(s)),el('p',null,s.address||''));
+ const actions=el('div','done-actions');const a=el('a','primary icon-ext','Notion 학교 페이지 열기');a.href='https://app.notion.com/p/'+targetId.replaceAll('-','');a.target='_blank';a.rel='noopener noreferrer';
+ const again=el('button','secondary','다른 학교 다시 찾기');again.type='button';again.onclick=()=>{$('results').replaceChildren();status('학교명과 주소를 확인해 연결하세요.');$('query').focus()};
+ actions.append(a,again);box.append(info,actions);$('results').replaceChildren(box);status(result.name+' · '+result.message,'success');again.focus()}
+$('searchForm').addEventListener('submit',async e=>{e.preventDefault();busy(e.target,true);$('results').replaceChildren();status('나이스에서 검색 중…');const targetId=$('target').value;try{const data=await api({action:'search',query:$('query').value,region:$('region').value});status(data.schools.length?data.schools.length+'개 학교를 찾았습니다. 지역과 주소를 확인하세요.':'검색 결과가 없습니다. 학교명 또는 지역을 다시 확인하세요.');for(const s of data.schools){const box=el('article','result');const info=el('div','result-info');info.append(el('strong',null,schoolTitle(s)),el('p',null,s.address));if(s.website){const a=el('a','link-chip icon-ext','학교 홈페이지');a.href=s.website;a.target='_blank';a.rel='noopener noreferrer';info.append(a)}const b=el('button','primary inline','이 학교로 연결');b.type='button';b.onclick=async()=>{const p=pages.find(p=>p.id===targetId);if(!confirm(`Notion ‘${p?.name}’ 페이지를 아래 학교와 연결할까요?\n${s.name}\n${s.address}\n기존 이름과 학생 관계는 유지됩니다.`))return;const buttons=[...$('results').querySelectorAll('button')];buttons.forEach(x=>x.disabled=true);b.classList.add('loading');status('학교 정보 저장 중…');try{const result=await api({action:'link',pageId:targetId,office:s.office,code:s.code});showLinked(targetId,s,result)}catch(e){status(e.message,'error');b.classList.remove('loading');buttons.forEach(x=>x.disabled=false)}};box.append(info,b);$('results').append(box)}$('results').querySelector('.result button')?.focus({preventScroll:true})}catch(e){status(e.message,'error')}finally{busy(e.target,false)}});
 </script></body></html>
