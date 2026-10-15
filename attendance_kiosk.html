@@ -1,298 +1,96 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="ko" class="device">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>출결 체크 키오스크</title>
+<title>출결 체크 키오스크 | 하다 학원관리</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%236B5D4D%22%20stroke-width%3D%222.4%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cstyle%3E%40media(prefers-color-scheme%3Adark)%7Bsvg%7Bstroke%3A%23E6D7C4%7D%7D%3C%2Fstyle%3E%3Cpolyline%20points%3D%229%2011%2012%2014%2022%204%22%2F%3E%3Cpath%20d%3D%22M21%2012v7a2%202%200%200%201-2%202H5a2%202%200%200%201-2-2V5a2%202%200%200%201%202-2h11%22%2F%3E%3C%2Fsvg%3E">
+<link rel="stylesheet" href="assets/hada-ui.css?v=beb0d95e">
 <style>
-  :root {
-    --kiosk-w: min(90vw, calc(90vh * 0.68), 640px);
-    --text-primary: #2C2C2B;
-    --text-secondary: #7D7A75;
-    --canvas: #FFFFFF;
-    --surface: #F9F8F7;
-    --surface-2: #F0EFED;
-    --border: #E6E5E3;
-    --blue: #2783DE;
-    --blue-soft: #E5F2FC;
-    --green: #46A171;
-    --green-soft: #E8F1EC;
-    --red: #E56458;
-    --red-soft: #FCE9E7;
-  }
-  html {
-    font-size: calc(16px * var(--kiosk-w) / 360px);
-  }
-  * { box-sizing: border-box; }
-  html, body {
-    margin: 0;
-    padding: 0;
-    height: 100%;
-    background: var(--surface);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", Roboto, Helvetica, Arial, sans-serif;
-    color: var(--text-primary);
-  }
-  body {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 100vh;
-    padding: 5vh 5vw;
-  }
-  .kiosk {
-    width: var(--kiosk-w);
-    aspect-ratio: 0.6;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    overflow: hidden;
-    background: var(--canvas);
-    border: 1px solid var(--border);
-    border-radius: 0.75rem;
-    box-shadow: 0 1px 2px rgba(0,0,0,.05), 0 4px 12px rgba(0,0,0,.04);
-    padding: 1.5rem 1.25rem;
-  }
-  .header { position: relative; text-align: center; margin-bottom: 1rem; }
-  .header .icon { width: 1.75rem; height: 1.75rem; margin: 0 auto 0.25rem; display: flex; }
-  .header h1 { font-size: 1.25rem; margin: 0.25rem 0 0.125rem; font-weight: 700; }
-  .header p { font-size: 0.8125rem; color: var(--text-secondary); margin: 0; }
-  .settings-btn {
-    position: absolute;
-    top: -0.25rem;
-    right: -0.25rem;
-    width: 2rem;
-    height: 2rem;
-    padding: 0.5rem;
-    border: none;
-    background: transparent;
-    cursor: pointer;
-    color: var(--text-secondary);
-    border-radius: 0.5rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .settings-btn:active { background: var(--surface-2); }
-  .display {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 0.5rem;
-    height: 3.25rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.375rem;
-    font-weight: 600;
-    letter-spacing: 1px;
-    margin-bottom: 1rem;
-    color: var(--text-primary);
-  }
-  .display.placeholder { color: var(--text-secondary); font-weight: 400; font-size: 0.9375rem; }
-  .keypad {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 0.625rem;
-    margin-bottom: 1rem;
-  }
-  .key {
-    height: 3.25rem;
-    border-radius: 0.5rem;
-    border: 1px solid var(--border);
-    background: var(--canvas);
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--text-primary);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: background .1s ease;
-  }
-  .key:active { background: var(--surface-2); }
-  .key.func { color: var(--text-secondary); font-size: 0.875rem; font-weight: 500; }
-  .confirm-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.625rem;
-  }
-  .confirm {
-    width: 100%;
-    height: 3.25rem;
-    border: none;
-    border-radius: 0.5rem;
-    background: var(--blue);
-    color: #fff;
-    font-size: 1rem;
-    font-weight: 700;
-    cursor: pointer;
-    transition: opacity .15s ease;
-  }
-  .confirm.secondary {
-    background: var(--surface);
-    color: var(--text-primary);
-    border: 1px solid var(--border);
-  }
-  .confirm:disabled { opacity: .6; cursor: default; }
-  .result {
-    margin-top: 0.875rem;
-    min-height: 3.75rem;
-    padding: 0.625rem 0.75rem;
-    font-size: 0.8125rem;
-    text-align: center;
-    border-radius: 0.5rem;
-    line-height: 1.5;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .result.success {
-    background: var(--green-soft);
-    color: var(--green);
-    font-weight: 600;
-  }
-  .result.error {
-    background: var(--red-soft);
-    color: var(--red);
-    font-weight: 600;
-  }
-  .result.info {
-    background: var(--blue-soft);
-    color: var(--blue);
-    font-weight: 600;
-  }
-  .key:focus-visible, .confirm:focus-visible, .settings-btn:focus-visible, .settings-input:focus-visible {
-    outline: 2px solid var(--blue);
-    outline-offset: 2px;
-  }
-  .settings-view { text-align: center; }
-  .settings-view .settings-icon { width: 1.75rem; height: 1.75rem; margin: 0 auto 0.5rem; display: flex; }
-  .settings-view h2 { font-size: 1rem; margin: 0.25rem 0 0.5rem; font-weight: 700; }
-  .settings-desc { font-size: 0.78125rem; color: var(--text-secondary); line-height: 1.5; margin: 0 0 1rem; }
-  .settings-input {
-    width: 100%;
-    height: 3rem;
-    border: 1px solid var(--border);
-    border-radius: 0.5rem;
-    padding: 0 0.75rem;
-    font-size: 0.875rem;
-    margin-bottom: 0.75rem;
-    background: var(--surface);
-    color: var(--text-primary);
-  }
-  .cancel-btn {
-    width: 100%;
-    height: 2.5rem;
-    margin-top: 0.25rem;
-    border: none;
-    background: transparent;
-    color: var(--text-secondary);
-    font-size: 0.8125rem;
-    cursor: pointer;
-  }
-  .candidates-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    margin-bottom: 0.75rem;
-    max-height: 42vh;
-    overflow-y: auto;
-  }
-  .candidate-btn {
-    width: 100%;
-    padding: 0.75rem 0.875rem;
-    border: 1px solid var(--border);
-    border-radius: 0.5rem;
-    background: var(--surface);
-    color: var(--text-primary);
-    font-size: 0.9375rem;
-    font-weight: 700;
-    text-align: left;
-    cursor: pointer;
-  }
-  .candidate-btn:active { background: var(--surface-2); }
-  .candidate-btn .sub {
-    display: block;
-    font-size: 0.75rem;
-    font-weight: 400;
-    color: var(--text-secondary);
-    margin-top: 0.125rem;
-  }
-  [hidden] { display: none !important; }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --text-primary: #FFFFFF;
-      --text-secondary: rgba(255,255,255,0.65);
-      --canvas: #202020;
-      --surface: #191919;
-      --surface-2: #383836;
-      --border: rgba(255,255,255,0.20);
-      --blue: #5E9FE8;
-      --blue-soft: rgba(94,159,232,0.12);
-      --green: #72BC8F;
-      --green-soft: rgba(114,188,143,0.12);
-      --red: #E97366;
-      --red-soft: rgba(233,115,102,0.12);
-    }
-    .confirm { color: #191919; }
-    .confirm.secondary { color: var(--text-primary); }
-  }
-  #login-screen {
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 16px;
-  }
-  .login-card {
-    background: #fff;
-    border-radius: 16px;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
-    padding: 32px 28px;
-    width: 100%;
-    max-width: 340px;
-    text-align: center;
-  }
-  .login-card h1 { font-size: 18px; margin: 0 0 4px; display: flex; align-items: center; justify-content: center; gap: 6px; }
-  .login-card h1 .title-icon { width: 18px; height: 18px; display: inline-flex; }
-  .title-icon svg, .settings-btn svg, .header .icon svg, .settings-icon svg { width: 100%; height: 100%; display: block; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-  .login-card p { font-size: 12px; color: #888; margin: 0 0 20px; }
-  .login-card input {
-    width: 100%;
-    padding: 10px 12px;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    font-size: 14px;
-    margin-bottom: 10px;
-  }
-  .login-card button {
-    width: 100%;
-    padding: 10px 12px;
-    background: #6c5ce7;
-    color: #fff;
-    border: none;
-    border-radius: 8px;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-  }
-  .login-card button:disabled { background: #ccc; cursor: default; }
-  .login-error { color: #e04b4b; font-size: 12px; margin-top: 10px; min-height: 14px; }
+/* 출결 키오스크 전용. 값은 assets/hada-ui.css 토큰만 쓴다(docs/DESIGN.md).
+   html.device 모드라 카드 폭에 맞춰 모든 크기가 함께 커진다. */
+.kiosk{position:relative;width:var(--device-w);min-height:calc(var(--device-w) * 1.6667);display:flex;flex-direction:column;justify-content:center;overflow:hidden;background:var(--surface);border:0;border-radius:var(--radius-lg);box-shadow:var(--shadow-card);padding:var(--space-8) var(--space-5)}
+.kiosk-head{text-align:center;margin-bottom:var(--space-5)}
+.kiosk-icon{width:var(--icon-lg);height:var(--icon-lg);margin:0 auto var(--space-1);color:var(--brand-deep)}
+.kiosk-head h1{font-size:var(--text-title);line-height:1.3;letter-spacing:0;margin:var(--space-1) 0 var(--space-1)}
+.kiosk-head p{font-size:var(--text-label);color:var(--text-muted);margin:0}
+/* 1부 5장: 44×44 클릭 영역 안 20×20 선형 아이콘, 배경·그림자 없음 */
+.icon-btn{position:absolute;top:var(--space-3);right:var(--space-3);width:var(--hit-area);height:var(--hit-area);padding:var(--space-3);border:0;background:none;color:var(--text-muted);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center}
+.icon-btn:active{background:var(--brand-soft)}
+/* 화면이 충분히 높으면 실제 44px 이상. 짧은 가로 화면은 카드 맞춤이 우선(2부 2-3) */
+@media(min-height:600px){.icon-btn{min-width:var(--hit-min);min-height:var(--hit-min)}}
+.display{background:var(--brand-tint);border:1px solid var(--brand-border);border-radius:var(--radius-md);height:var(--control-lg);display:flex;align-items:center;justify-content:center;font-size:var(--text-title);font-weight:600;letter-spacing:1px;margin-bottom:var(--space-4)}
+.display.placeholder{color:var(--text-subtle);font-weight:400;font-size:var(--text-body);letter-spacing:0}
+.keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--space-3);margin-bottom:var(--space-4)}
+.key{height:var(--control-lg);padding:0;border-radius:var(--radius-md);border:1px solid var(--brand-border);background:var(--surface);font-size:var(--text-lead);font-weight:600;color:var(--text-ink);display:flex;align-items:center;justify-content:center;transition:background .1s ease}
+.key:active,.key.pressed{background:var(--brand-soft)}
+.key.func{color:var(--text-muted);font-size:var(--text-small);font-weight:500}
+.confirm-row{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-3)}
+.confirm-row .primary,.confirm-row .secondary{width:100%;height:var(--control-lg);font-size:var(--text-body);font-weight:700}
+/* 키보드로 고른 버튼: 바깥 테두리(키보드를 쓴 뒤에만) */
+.confirm-row .chosen,.pick .chosen{outline:3px solid var(--brand-deep);outline-offset:3px}
+/* 학생 목록은 길면 스크롤되는 칸이라 바깥 테두리가 잘린다. 학생 버튼은 테두리를 안쪽(버튼 테두리 위)에 그린다 */
+.pick .candidate-btn.chosen{outline-offset:-3px}
+/* 처리 결과: 카드 레이아웃을 흔들지 않도록 모달로 띄운다. 성공·이미 처리는 잠시 뒤 자동으로 닫힌다 */
+dialog.result-dialog{width:calc(var(--device-w) * .85);max-width:calc(100vw - var(--space-8));padding:var(--space-6) var(--space-5);text-align:center}
+.result-icon{width:calc(var(--icon-lg) * 1.5);height:calc(var(--icon-lg) * 1.5);margin:0 auto var(--space-3);padding:var(--space-2);border-radius:var(--radius-pill)}
+.result-text{font-size:var(--text-body);font-weight:600;line-height:1.6;margin:0 0 var(--space-5)}
+.result-dialog.result-success .result-icon{background:var(--success-soft);color:var(--success-ink)}
+.result-dialog.result-info .result-icon{background:var(--info-soft);color:var(--info-ink)}
+.result-dialog.result-error .result-icon{background:var(--danger-soft);color:var(--danger-ink)}
+.result-dialog.result-success .result-text{color:var(--success-ink)}
+.result-dialog.result-info .result-text{color:var(--info-ink)}
+.result-dialog.result-error .result-text{color:var(--danger-ink)}
+.pick{text-align:center}
+.pick-icon{width:var(--icon-lg);height:var(--icon-lg);margin:0 auto var(--space-2);color:var(--brand-deep)}
+.pick h2{font-size:var(--text-body);margin:var(--space-1) 0 var(--space-2)}
+.pick p{font-size:var(--text-label);color:var(--text-muted);line-height:1.5;margin:0 0 var(--space-4)}
+.candidates-list{display:flex;flex-direction:column;gap:var(--space-2);margin-bottom:var(--space-3);max-height:42vh;overflow-y:auto}
+.candidate-btn{width:100%;padding:var(--space-3) var(--space-4);border:1px solid var(--brand-border);border-radius:var(--radius-md);background:var(--brand-tint);color:var(--text-ink);font-size:var(--text-body);font-weight:700;text-align:left}
+.candidate-btn:active{background:var(--brand-soft)}
+.candidate-btn .sub{display:block;font-size:var(--text-caption);font-weight:400;color:var(--text-muted);margin-top:2px}
+/* 학원 이름: 마지막 버튼(등원·하원, 취소) 아래에 일정한 간격으로 작게. 카드 바닥에 붙이지 않는다.
+   값은 서버가 Notion 최상위 페이지 제목에서 가져온다 */
+.academy-name{margin:var(--space-5) 0 0;text-align:center;font-size:var(--text-caption);color:var(--text-subtle);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pick-cancel{width:100%;height:var(--control-h);margin-top:var(--space-1);font-size:var(--text-body)}
+/* 한 글자 지우기: 숫자와 같은 굵기의 선형 아이콘 */
+.key.back{color:var(--text-ink)}
+.key.back svg{width:var(--icon-md);height:var(--icon-md)}
+/* 키오스크 설정 창 */
+dialog.settings-dialog{width:calc(var(--device-w) * .9);max-width:calc(100vw - var(--space-8));padding:var(--space-5)}
+.settings-section{padding:var(--space-3) 0;border-top:1px solid var(--divider)}
+.settings-section h3{margin:0 0 var(--space-2);font-size:var(--text-small);color:var(--text-muted)}
+.settings-section .tabs button{min-height:var(--control-h)}
+.settings-help{margin:var(--space-2) 0;font-size:var(--text-caption);color:var(--text-muted)}
+.settings-section .secondary,.settings-logout,.settings-auth .primary{width:100%;height:var(--control-h)}
+.settings-auth{display:flex;flex-direction:column;gap:var(--space-2);padding:var(--space-3) 0;border-top:1px solid var(--divider)}
+.settings-auth label{font-size:var(--text-small);font-weight:700}
+.settings-msg{margin:var(--space-2) 0;font-size:var(--text-small);color:var(--text-muted)}
+.settings-msg:empty{display:none}
+.settings-msg.error{color:var(--danger-ink)}/* 로그인 */
+.login-card{width:var(--device-w);text-align:center}
+.login-card h1{font-size:var(--text-lead);line-height:1.4;letter-spacing:0;margin:0 0 var(--space-1);display:flex;align-items:center;justify-content:center;gap:var(--space-2)}
+.title-icon{width:var(--text-lead);height:var(--text-lead);display:inline-flex}
+.login-card p{font-size:var(--text-small);color:var(--text-muted);margin:0 0 var(--space-5)}
+.login-card input{margin-bottom:var(--space-3)}
+/* 입력칸 포커스: 공용 파란 바깥선과 입력칸 테두리가 두 줄로 겹치지 않게 테두리 한 줄(브랜드 색)로 */
+.login-card input:focus-visible{outline:2px solid var(--brand-deep);outline-offset:-1px;border-color:var(--brand-deep)}
+.login-error{color:var(--danger-ink);font-size:var(--text-small);margin-top:var(--space-2)}
+.login-error:empty{display:none}
 </style>
 </head>
 <body>
-  <div id="login-screen" style="display:none">
-    <div class="login-card">
-      <h1><span class="title-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg></span>관리자 로그인</h1>
-      <p>학원관리 화면에 접근하려면<br>관리자 비밀번호를 입력하세요</p>
-      <input type="password" id="login-input" placeholder="관리자 비밀번호" autocomplete="current-password">
-      <button id="login-btn" onclick="submitLogin()">로그인</button>
-      <div class="login-error" id="login-error"></div>
-    </div>
+  <div class="card login-card" id="login-screen" hidden>
+    <h1><span class="title-icon"><svg class="line" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg></span>관리자 로그인</h1>
+    <p>학원관리 화면에 접근하려면<br>관리자 비밀번호를 입력하세요</p>
+    <input type="password" id="login-input" placeholder="관리자 비밀번호" autocomplete="current-password">
+    <button class="primary" id="login-btn" onclick="submitLogin()">로그인</button>
+    <div class="login-error" id="login-error"></div>
   </div>
-  <div class="kiosk" id="app-screen" style="display:none">
-    <div class="header">
-      <button class="settings-btn" id="logoutBtn" aria-label="로그아웃" title="로그아웃"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg></button>
-      <div class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg></div>
+  <div class="kiosk" id="app-screen" hidden>
+    <button class="icon-btn" id="settingsBtn" aria-label="키오스크 설정" title="설정"><svg class="line" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
+    <div class="kiosk-head" id="kioskHead">
+      <div class="kiosk-icon"><svg class="line" viewBox="0 0 24 24" aria-hidden="true"><polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg></div>
       <h1>출결 체크</h1>
       <p>보호자 또는 학생 전화번호를 입력해주세요</p>
     </div>
@@ -309,26 +107,55 @@
         <button class="key" data-val="7">7</button>
         <button class="key" data-val="8">8</button>
         <button class="key" data-val="9">9</button>
-        <button class="key func" data-val="clear">전체지우기</button>
+        <button class="key func" data-val="clear">전체 지우기</button>
         <button class="key" data-val="0">0</button>
-        <button class="key func" data-val="back">⌫</button>
+        <button class="key func back" data-val="back" aria-label="한 글자 지우기"><svg class="line" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"></path><line x1="18" y1="9" x2="12" y2="15"></line><line x1="12" y1="9" x2="18" y2="15"></line></svg></button>
       </div>
       <div class="confirm-row">
-        <button class="confirm" id="checkinBtn">등원</button>
-        <button class="confirm secondary" id="checkoutBtn">하원</button>
+        <button class="primary" id="checkinBtn">등원</button>
+        <button class="secondary" id="checkoutBtn">하원</button>
       </div>
-      <div class="result" id="result"></div>
     </div>
 
-    <div id="candidatesView" class="settings-view" hidden>
-      <div class="settings-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></div>
+    <div id="candidatesView" class="pick" hidden>
+      <div class="pick-icon"><svg class="line" viewBox="0 0 24 24" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></div>
       <h2>학생을 선택해주세요</h2>
-      <p class="settings-desc">같은 번호로 등록된 학생이 여러 명이에요.<br />해당하는 학생을 선택해주세요.</p>
+      <p>같은 번호로 등록된 학생이 여러 명이에요.<br />해당하는 학생을 선택해주세요.</p>
       <div class="candidates-list" id="candidatesList"></div>
-      <button class="cancel-btn" id="cancelCandidatesBtn">취소</button>
+      <button class="secondary pick-cancel" id="cancelCandidatesBtn">취소</button>
     </div>
+    <p class="academy-name" id="academyName" hidden></p>
   </div>
-
+  <!-- 키오스크 설정: 체크 방식·출석 동기화는 관리자 비밀번호 확인 후 바꾼다(학생이 바꾸지 못하게). 로그아웃은 확인창만. -->
+  <dialog class="card settings-dialog" id="settings" aria-labelledby="settingsTitle">
+    <div class="dialog-head"><h2 id="settingsTitle">키오스크 설정</h2><button class="ghost" id="settingsClose" type="button">닫기</button></div>
+    <section class="settings-section">
+      <h3>등하원 체크 방식</h3>
+      <div class="tabs" id="modeTabs" role="radiogroup" aria-label="등하원 체크 방식">
+        <button type="button" data-mode="once" role="radio">1일 1회</button>
+        <button type="button" data-mode="every" role="radio">매번 기록</button>
+      </div>
+      <p class="settings-help" id="modeHelp"></p>
+    </section>
+    <section class="settings-section">
+      <h3>출석 동기화</h3>
+      <p class="settings-help" id="settingsSyncAt"></p>
+      <button class="secondary" id="syncNowBtn" type="button">지금 동기화</button>
+    </section>
+    <div class="settings-auth" id="settingsAuth" hidden>
+      <label for="settingsPw">관리자 비밀번호</label>
+      <input type="password" id="settingsPw" autocomplete="current-password" placeholder="변경하려면 관리자 비밀번호를 입력하세요">
+      <button class="primary" id="settingsAuthOk" type="button">확인</button>
+    </div>
+    <p class="settings-msg" id="settingsMsg" aria-live="polite"></p>
+    <button class="secondary settings-logout" id="logoutBtn" type="button">로그아웃</button>
+  </dialog>  <dialog class="card result-dialog" id="result" aria-live="assertive">
+    <div class="result-icon" id="resultIcon"></div>
+    <p class="result-text" id="resultText"></p>
+    <button class="primary" id="resultClose" type="button">확인</button>
+  </dialog>
+<script src="hada_config.js"></script>
+<script src="admin_auth.js?v=4ffde89c"></script>
 <script>
   // 등원/하원 데이터는 더 이상 외부 웹훅(Make.com)으로 보내지 않습니다.
   // 로그인 때 저장해둔 관리자 키(x-admin-key)로 Supabase Edge Function "kiosk-checkin"을
@@ -356,6 +183,8 @@
     if (!res.ok) { const error = new Error(res.status === 401 ? "로그인이 만료되었습니다." : "학생 목록을 불러오지 못했습니다."); error.status = res.status; throw error; }
     const data = await res.json();
     if (!Array.isArray(data.candidates)) throw new Error("학생 목록 응답 형식 오류");
+    showAcademyName(data.academyName);
+    showPrepared(data.kioskPrepared);
     return data.candidates;
   }
   async function refreshKioskDirectory(force = false) {
@@ -375,6 +204,33 @@
     const normalized = String(phone).replace(/[^0-9]/g, "");
     return kioskCandidates.filter(c => Array.isArray(c.phones) && c.phones.includes(normalized));
   }
+  function showAcademyName(name) {
+    const el = document.getElementById("academyName");
+    el.textContent = typeof name === "string" ? name.slice(0, 60) : "";
+    el.hidden = !el.textContent;
+  }
+  // 출석 동기화(오늘 출석 준비, v2.5.37): 마지막 준비 시각을 설정 창에 "마지막 동기화 HH:mm"으로 보여 준다(v2.5.40부터 학생 화면에는 표시하지 않음). 준비가 없어서 서버가 지금 준비 중이면
+  // 30초 뒤 목록을 한 번 다시 받아 시각을 갱신한다.
+  let preparedRetry = null;
+  let preparedRetried = false;
+  let preparedInfo = null;
+  function preparedText(info) {
+    if (info && info.today && info.at) return "마지막 동기화 " + new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(info.at));
+    if (info && info.preparing) return "동기화 중…";
+    return "";
+  }
+  function showPrepared(info) {
+    // 동기화 시각은 학생 화면에 보이지 않고 설정 창에서만 보여 준다.
+    preparedInfo = info || null;
+    clearTimeout(preparedRetry);
+    if (info && info.today) preparedRetried = false;
+    // 서버가 지금 준비 중이면 30초 뒤 한 번만 다시 확인한다(그 뒤로는 평소 5분 목록 갱신 때 확인).
+    else if (info && info.preparing && !preparedRetried) {
+      preparedRetried = true;
+      preparedRetry = setTimeout(() => refreshKioskDirectory(true).catch(() => {}), 30000);
+    }
+    if (settingsEl.open) renderSettings();
+  }
   function clearKioskDirectory() { kioskDirectoryVersion++; kioskCandidates = []; kioskCandidatesAt = 0; kioskDirectoryPending = null; }
   const display = document.getElementById("display");
   const resultEl = document.getElementById("result");
@@ -384,13 +240,39 @@
   const candidatesView = document.getElementById("candidatesView");
   const candidatesList = document.getElementById("candidatesList");
   const logoutBtn = document.getElementById("logoutBtn");
+  const settingsEl = document.getElementById("settings");
   const cancelCandidatesBtn = document.getElementById("cancelCandidatesBtn");
+  const kioskHead = document.getElementById("kioskHead");
 
   function showMain() {
     candidatesView.hidden = true;
     mainView.hidden = false;
+    kioskHead.hidden = false;
   }
 
+  // 학생 선택 화면의 키보드 이동: 학생 버튼들과 맨 아래 "취소"를 차례로 고른다.
+  let pickIndex = -1;
+  function pickItems() { return [...candidatesList.querySelectorAll(".candidate-btn"), cancelCandidatesBtn]; }
+  function renderPick() { pickItems().forEach((b, i) => b.classList.toggle("chosen", i === pickIndex)); }
+  function pickKey(e) {
+    if (e.ctrlKey || e.metaKey || e.altKey || e.target instanceof HTMLInputElement) return;
+    const items = pickItems();
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      kbUsed = true;
+      const step = e.key === "ArrowDown" ? 1 : -1;
+      pickIndex = pickIndex < 0 ? 0 : (pickIndex + step + items.length) % items.length;
+      renderPick();
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      kbUsed = true;
+      if (pickIndex < 0) { pickIndex = 0; renderPick(); return; }
+      items[pickIndex].click();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      cancelCandidatesBtn.click();
+    }
+  }
   function showCandidates(candidates, type) {
     pendingType = type;
     candidatesList.innerHTML = "";
@@ -407,6 +289,11 @@
     });
     mainView.hidden = true;
     candidatesView.hidden = false;
+    // The pick view has its own icon and title, so the phone-number header is hidden while choosing.
+    kioskHead.hidden = true;
+    // 키보드로 왔으면 첫 학생을 골라 둔다(↑/↓로 이동, Enter로 선택, Esc로 취소).
+    pickIndex = kbUsed ? 0 : -1;
+    renderPick();
   }
 
   cancelCandidatesBtn.addEventListener("click", () => {
@@ -424,6 +311,7 @@
   }
 
   function updateDisplay() {
+    if (digits.length < 9 && choice) setChoice(null);
     if (digits.length === 0) {
       display.textContent = "전화번호 입력";
       display.classList.add("placeholder");
@@ -433,20 +321,42 @@
     }
   }
 
+  // 처리 결과는 모달로 보여 준다. 성공·이미 처리는 3초 뒤 자동으로 닫고, 오류는 확인을 눌러 닫는다.
+  const RESULT_ICONS = {
+    success: '<polyline points="20 6 9 17 4 12"></polyline>',
+    info: '<circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line>',
+    error: '<circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line>',
+  };
+  let resultTimer = null;
   function clearResult() {
-    resultEl.className = "result";
-    resultEl.textContent = "";
+    clearTimeout(resultTimer);
+    if (resultEl.open) resultEl.close();
   }
 
   function showResult(type, msg) {
-    resultEl.className = "result " + type;
-    resultEl.textContent = msg;
+    clearTimeout(resultTimer);
+    // "result-" prefix: the shared .error class (form error text) would add its own margins to the dialog.
+    resultEl.className = "card result-dialog result-" + type;
+    document.getElementById("resultIcon").innerHTML = '<svg class="line" viewBox="0 0 24 24" aria-hidden="true">' + RESULT_ICONS[type] + '</svg>';
+    document.getElementById("resultText").textContent = msg;
+    if (!resultEl.open) resultEl.showModal();
+    if (type !== "error") resultTimer = setTimeout(clearResult, 3000);
   }
+  document.getElementById("resultClose").addEventListener("click", clearResult);
 
-  document.getElementById("keypad").addEventListener("click", (e) => {
-    const btn = e.target.closest(".key");
-    if (!btn) return;
-    const val = btn.dataset.val;
+  // 키보드로 등원·하원 고르기: 키보드를 한 번이라도 쓰면(kbUsed) 고른 버튼에 테두리를 그린다.
+  // 휴대폰 번호 11자리가 채워지면 등원이 자동으로 골라지고, ←/→로 바꾸고 Enter로 처리한다.
+  // 9~10자리 번호는 Enter를 처음 누르면 등원이 골라지고 한 번 더 누르면 처리한다.
+  let kbUsed = false;
+  let choice = null;
+  function renderChoice() {
+    checkinBtn.classList.toggle("chosen", kbUsed && choice === "checkin");
+    checkoutBtn.classList.toggle("chosen", kbUsed && choice === "checkout");
+  }
+  function setChoice(next) { choice = next; renderChoice(); }
+
+  function pressKey(val) {
+    const before = digits;
     if (val === "back") {
       digits = digits.slice(0, -1);
     } else if (val === "clear") {
@@ -454,18 +364,66 @@
     } else if (digits.length < 11) {
       digits += val;
     }
+    // 번호가 바뀌면 고른 것을 다시 정한다: 11자리면 등원(이미 고른 게 있으면 유지), 아니면 해제.
+    if (digits !== before) setChoice(digits.length === 11 && kbUsed ? (choice || "checkin") : null);
     updateDisplay();
     clearResult();
+  }
+
+  document.getElementById("keypad").addEventListener("click", (e) => {
+    const btn = e.target.closest(".key");
+    if (btn) pressKey(btn.dataset.val);
+  });
+
+  // 키보드 입력(PC·노트북 키오스크): 숫자(숫자패드 포함), Backspace = 한 글자 지우기, Delete = 전체 지우기,
+  // ←/→ = 등원·하원 고르기, Enter = 고른 쪽으로 처리(위 renderChoice 주석 참고).
+  document.addEventListener("keydown", (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (document.getElementById("app-screen").hidden) return;
+    // 설정 창이 열려 있거나 등원·하원 처리 중이면 키보드 입력을 받지 않는다(처리 중 Enter로 두 번 처리되지 않게).
+    if (settingsEl.open || checkinBtn.disabled) return;
+    if (!candidatesView.hidden) { pickKey(e); return; }
+    if (mainView.hidden) return;
+    if (e.target instanceof HTMLInputElement) return;
+    // 결과 모달이 떠 있으면 Enter·Esc는 모달 닫기만 한다(처리가 두 번 되지 않게).
+    if (resultEl.open && (e.key === "Enter" || e.key === "Escape")) { e.preventDefault(); clearResult(); return; }
+    // 마우스·터치로 눌렀던 화면 버튼에 남은 포커스 테두리가 키보드 선택 표시와 헷갈리지 않게 푼다.
+    if (document.activeElement && document.activeElement.closest && document.activeElement.closest("#mainView")) document.activeElement.blur();
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      e.preventDefault();
+      kbUsed = true;
+      if (digits.length >= 9) setChoice(e.key === "ArrowLeft" ? "checkin" : "checkout");
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      kbUsed = true;
+      if (digits.length < 9) { showResult("error", "전화번호를 정확히 입력해주세요."); return; }
+      if (!choice) { setChoice("checkin"); return; }
+      submitAttendance(choice);
+      return;
+    }
+    // 숫자패드는 NumLock이 꺼져 있으면 e.key가 숫자가 아니므로 키 위치(e.code)로도 받는다.
+    const pad = /^Numpad([0-9])$/.exec(e.code);
+    const val = /^[0-9]$/.test(e.key) ? e.key : pad ? pad[1] : e.key === "Backspace" ? "back" : e.key === "Delete" ? "clear" : null;
+    if (!val) return;
+    e.preventDefault();
+    kbUsed = true;
+    pressKey(val);
+    // 누른 키를 화면 숫자판에도 잠깐 표시한다.
+    const btn = document.querySelector('.key[data-val="' + val + '"]');
+    if (btn) { btn.classList.add("pressed"); setTimeout(() => btn.classList.remove("pressed"), 120); }
   });
 
   async function runCheckin(type, registrationId) {
     const requestPhone = digits;
     const label = type === "checkin" ? "등원" : "하원";
     const activeBtn = type === "checkin" ? checkinBtn : checkoutBtn;
-    const originalText = activeBtn.textContent;
+    const originalText = activeBtn.innerHTML;
     checkinBtn.disabled = true;
     checkoutBtn.disabled = true;
-    activeBtn.textContent = "확인 중...";
+    activeBtn.textContent = "확인 중…";
+    activeBtn.classList.add("loading");
     try {
       // 최소 목록 우선. 목록 장애는 구버전 전화번호 조회로 보완하되 인증 실패는 재로그인한다.
       try { await refreshKioskDirectory(); } catch (e) {
@@ -483,7 +441,7 @@
         if (candidates.length > 1) { digits = requestPhone; updateDisplay(); showCandidates(candidates, type); return; }
         if (candidates.length === 1) registrationId = candidates[0].registrationId;
       }
-      const body = { phone: requestPhone, type };
+      const body = { phone: requestPhone, type, mode: checkMode() };
       if (registrationId) body.registrationId = registrationId;
       const res = await fetch(`${SUPABASE_URL}/functions/v1/kiosk-checkin`, {
         method: "POST",
@@ -514,15 +472,18 @@
       } else if (res.ok && data.needsSelection) {
         checkinBtn.disabled = false;
         checkoutBtn.disabled = false;
-        activeBtn.textContent = originalText;
+        activeBtn.innerHTML = originalText;
+        activeBtn.classList.remove("loading");
         digits = requestPhone; updateDisplay(); showCandidates(data.candidates, type);
         return;
+      } else if (res.ok && data.matched && data.alreadyDone && data.recent) {
+        showResult("info", `방금 ${data.alreadyAt ? data.alreadyAt + "에 " : ""}${label} 처리되었습니다.`);
       } else if (res.ok && data.matched && data.alreadyDone) {
         showResult("info", `이미 ${data.alreadyAt ? data.alreadyAt + "에 " : ""}${label} 처리되었습니다.`);
       } else if (res.ok && data.matched) {
         showResult(
           "success",
-          (data.studentName ? data.studentName + " 학생 " : "") + label + " 처리되었습니다. 학부모님께 알림을 보냈습니다."
+          (data.studentName ? data.studentName + " 학생 " : "") + label + " 처리되었습니다. 학부모님께 알림을 보냅니다."
         );
       } else if (res.ok && data.matched === false) {
         showResult("error", "일치하는 연락처를 찾을 수 없습니다. 등록된 번호인지 확인해주세요.");
@@ -535,7 +496,8 @@
     } finally {
       checkinBtn.disabled = false;
       checkoutBtn.disabled = false;
-      activeBtn.textContent = originalText;
+      activeBtn.innerHTML = originalText;
+      activeBtn.classList.remove("loading");
       if (candidatesView.hidden) { digits = ""; updateDisplay(); }
     }
   }
@@ -554,21 +516,23 @@
   updateDisplay();
 
   // ============ 공용 로그인 (admin.html과 같은 localStorage 키를 사용해 한 번만 로그인하면 됩니다) ============
-  const SUPABASE_URL = "https://dtltoanvjgrqkmsqxhvh.supabase.co";
-  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR0bHRvYW52amdycWttc3F4aHZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA2NjM0MjQsImV4cCI6MjEwNjIzOTQyNH0.k4LZeh6OqjWaUpeU0hDAWZvwAxJnjZI3rSnqXp8ROvE";
+  // 학원 연결 설정은 hada_config.js에서 읽는다(HadaAdminAuth.config). 없거나 잘못되면 로그인 화면에 알린다.
+  let SUPABASE_URL = "", SUPABASE_ANON_KEY = "", CONFIG_ERROR = "";
+  try { ({ url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY } = HadaAdminAuth.config()); } catch (e) { CONFIG_ERROR = e.message; }
   const ADMIN_KEY_STORAGE = "admin_key";
   function getAdminKey() { return localStorage.getItem(ADMIN_KEY_STORAGE) || ""; }
   function showLoginScreen(errorMsg) {
     clearKioskDirectory();
-    document.getElementById("login-screen").style.display = "flex";
-    document.getElementById("app-screen").style.display = "none";
+    clearResult();
+    document.getElementById("login-screen").hidden = false;
+    document.getElementById("app-screen").hidden = true;
     document.getElementById("login-error").textContent = errorMsg || "";
     document.getElementById("login-input").value = "";
     setTimeout(() => document.getElementById("login-input").focus(), 50);
   }
   function showAppScreen() {
-    document.getElementById("login-screen").style.display = "none";
-    document.getElementById("app-screen").style.display = "flex";
+    document.getElementById("login-screen").hidden = true;
+    document.getElementById("app-screen").hidden = false;
     showMain();
     refreshKioskDirectory().catch(err => {
       if (err.status === 401) { localStorage.removeItem(ADMIN_KEY_STORAGE); showLoginScreen(err.message); }
@@ -576,23 +540,138 @@
   }
   logoutBtn.addEventListener("click", () => {
     if (!confirm("로그아웃 하시겠습니까?")) return;
+    closeSettings();
     localStorage.removeItem(ADMIN_KEY_STORAGE);
     digits = "";
     updateDisplay();
     showLoginScreen();
   });
+  // ============ 키오스크 설정(v2.5.39): 체크 방식·출석 동기화·로그아웃 ============
+  // 체크 방식은 이 기기 브라우저에 저장하고 등원·하원 요청에 함께 보낸다(기기마다 따로 설정). 기본은 1일 1회.
+  const CHECK_MODE_KEY = "kiosk_check_mode";
+  const MODE_HELP = {
+    once: "그날 이미 등원(하원)했으면 다시 기록하지 않고 \"이미 처리\"로 안내합니다.",
+    every: "누를 때마다 새 시각으로 기록하고 학부모님께 알림을 보냅니다(외출 후 재입장 등).",
+  };
+  function checkMode() {
+    try { return localStorage.getItem(CHECK_MODE_KEY) === "every" ? "every" : "once"; } catch (e) { return "once"; }
+  }
+  // 체크 방식 변경·지금 동기화는 관리자 비밀번호를 확인한 뒤에만 한다. 확인은 설정 창을 닫을 때까지 유지한다.
+  let settingsVerified = false;
+  let pendingSettingsAction = null;
+  function settingsMessage(text, isError) {
+    const el = document.getElementById("settingsMsg");
+    el.textContent = text || "";
+    el.classList.toggle("error", !!isError);
+  }
+  function renderSettings() {
+    const mode = checkMode();
+    document.querySelectorAll("#modeTabs button").forEach(b => {
+      const on = b.dataset.mode === mode;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-checked", on ? "true" : "false");
+    });
+    document.getElementById("modeHelp").textContent = MODE_HELP[mode];
+    document.getElementById("settingsSyncAt").textContent = preparedText(preparedInfo) || "아직 동기화 기록이 없습니다.";
+  }
+  function openSettings() {
+    settingsVerified = false;
+    pendingSettingsAction = null;
+    document.getElementById("settingsAuth").hidden = true;
+    document.getElementById("settingsPw").value = "";
+    settingsMessage("");
+    renderSettings();
+    settingsEl.showModal();
+  }
+  function closeSettings() {
+    settingsVerified = false;
+    pendingSettingsAction = null;
+    if (settingsEl.open) settingsEl.close();
+  }
+  function withAdminCheck(action) {
+    if (settingsVerified) return action();
+    pendingSettingsAction = action;
+    document.getElementById("settingsAuth").hidden = false;
+    settingsMessage("변경하려면 관리자 비밀번호를 입력하세요.");
+    setTimeout(() => document.getElementById("settingsPw").focus(), 30);
+  }
+  async function confirmSettingsPassword() {
+    const input = document.getElementById("settingsPw");
+    const okBtn = document.getElementById("settingsAuthOk");
+    const pw = input.value;
+    if (!pw) { settingsMessage("비밀번호를 입력하세요.", true); return; }
+    okBtn.disabled = true; okBtn.classList.add("loading");
+    try {
+      // 키오스크 로그인과 같은 확인. 보안 모드면 새 키오스크 세션으로 바꿔 둔다.
+      // 보안 모드가 아닌 서버는 비밀번호를 그대로 돌려주므로 저장된 키와 같은지로 확인한다.
+      const session = await HadaAdminAuth.login(SUPABASE_URL, pw, "kiosk");
+      if (session === pw && pw !== getAdminKey()) throw new Error("비밀번호가 맞지 않습니다.");
+      if (session !== pw) localStorage.setItem(ADMIN_KEY_STORAGE, session);
+      settingsVerified = true;
+      input.value = "";
+      document.getElementById("settingsAuth").hidden = true;
+      settingsMessage("");
+      const action = pendingSettingsAction; pendingSettingsAction = null;
+      if (action) await action();
+    } catch (err) {
+      settingsMessage("확인하지 못했습니다: " + err.message, true);
+    } finally {
+      okBtn.disabled = false; okBtn.classList.remove("loading");
+    }
+  }
+  async function syncNow() {
+    const btn = document.getElementById("syncNowBtn");
+    btn.disabled = true; btn.classList.add("loading");
+    settingsMessage("출석 정보를 Notion과 다시 맞추는 중입니다…");
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/list-students?kiosk=1&sync=1`, {
+        cache: "no-store",
+        headers: { "x-admin-key": getAdminKey(), "Authorization": `Bearer ${SUPABASE_ANON_KEY}`, "apikey": SUPABASE_ANON_KEY },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !Array.isArray(data.candidates)) throw new Error(res.status === 401 ? "로그인이 만료되었습니다." : "동기화하지 못했습니다.");
+      kioskCandidates = data.candidates; kioskCandidatesAt = Date.now();
+      showPrepared(data.kioskPrepared);
+      const info = data.kioskPrepared || {};
+      if (info.syncError) settingsMessage(info.syncError, true);
+      else settingsMessage(info.synced === false ? "1분 안에 이미 동기화했습니다." : "출석 동기화를 마쳤습니다.");
+    } catch (err) {
+      settingsMessage(err.message, true);
+    } finally {
+      btn.disabled = false; btn.classList.remove("loading");
+    }
+  }
+  document.getElementById("settingsBtn").addEventListener("click", openSettings);
+  document.getElementById("settingsClose").addEventListener("click", closeSettings);
+  settingsEl.addEventListener("close", () => { settingsVerified = false; pendingSettingsAction = null; });
+  document.getElementById("modeTabs").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-mode]");
+    if (!btn || btn.dataset.mode === checkMode()) return;
+    withAdminCheck(() => {
+      try { localStorage.setItem(CHECK_MODE_KEY, btn.dataset.mode); } catch (err) {}
+      renderSettings();
+      settingsMessage("체크 방식을 \"" + btn.textContent + "\"으로 바꿨습니다.");
+    });
+  });
+  document.getElementById("syncNowBtn").addEventListener("click", () => withAdminCheck(syncNow));
+  document.getElementById("settingsAuthOk").addEventListener("click", confirmSettingsPassword);
+  document.getElementById("settingsPw").addEventListener("keydown", (e) => { if (e.key === "Enter") confirmSettingsPassword(); });
   async function submitLogin() {
     const input = document.getElementById("login-input");
     const key = input.value.trim();
     const btn = document.getElementById("login-btn");
     const errEl = document.getElementById("login-error");
     if (!key) { errEl.textContent = "비밀번호를 입력하세요."; return; }
+    if (CONFIG_ERROR) { errEl.textContent = CONFIG_ERROR; return; }
     btn.disabled = true;
-    btn.textContent = "확인 중...";
+    btn.textContent = "확인 중…";
+    btn.classList.add("loading");
     errEl.textContent = "";
     try {
-      const candidates = await fetchKioskDirectory(key);
-      localStorage.setItem(ADMIN_KEY_STORAGE, key);
+      const session = await HadaAdminAuth.login(SUPABASE_URL, key, "kiosk");
+      const candidates = await fetchKioskDirectory(session);
+      localStorage.setItem(ADMIN_KEY_STORAGE, session);
+      input.value = "";
       kioskCandidates = candidates;
       kioskCandidatesAt = Date.now();
       showAppScreen();
@@ -601,13 +680,16 @@
     } finally {
       btn.disabled = false;
       btn.textContent = "로그인";
+      btn.classList.remove("loading");
     }
   }
   document.getElementById("login-input").addEventListener("keydown", (e) => {
     if (e.key === "Enter") submitLogin();
   });
 
-  if (getAdminKey()) {
+  if (CONFIG_ERROR) {
+    showLoginScreen(CONFIG_ERROR);
+  } else if (getAdminKey()) {
     showAppScreen();
   } else {
     showLoginScreen();

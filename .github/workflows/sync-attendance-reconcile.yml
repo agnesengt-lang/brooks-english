@@ -1,0 +1,25 @@
+name: Sync Attendance (daily reconcile)
+
+on:
+  # v2.5.13: 정기 실행(매일 16:00 UTC)은 해제했다. 학부모 리포트는 보고서 발송 직전과
+  # "학생 페이지 동기화" 버튼에서 등록 단위로(삭제분 포함) 최신화한다.
+  # 전체 출석 원자료를 한 번에 대조해야 할 때만 Actions 탭에서 수동 실행한다.
+  workflow_dispatch: {}
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call sync-attendance (mode=reconcile)
+        run: |
+          set -e
+          # --fail-with-body: 401 등 HTTP 오류를 job 실패로 표시한다(응답 본문은 로그에 남김).
+          curl -sS --fail-with-body -X POST "https://${SUPABASE_PROJECT_ID}.supabase.co/functions/v1/sync-attendance" \
+            -H "apikey: ${SUPABASE_ANON_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+            -H "x-admin-key: ${{ secrets.ADMIN_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -d '{"mode":"reconcile"}'
+        env:
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}

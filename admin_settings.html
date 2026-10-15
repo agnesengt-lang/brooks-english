@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://*.supabase.co; base-uri 'none'; form-action 'none'">
+<title>관리자 설정 | 하다 학원관리</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%236B5D4D%22%20stroke-width%3D%222.4%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cstyle%3E%40media(prefers-color-scheme%3Adark)%7Bsvg%7Bstroke%3A%23E6D7C4%7D%7D%3C%2Fstyle%3E%3Cpath%20d%3D%22M12%2015a3%203%200%201%200%200-6%203%203%200%200%200%200%206z%22%2F%3E%3Cpath%20d%3D%22M19.4%2015a1.65%201.65%200%200%200%20.33%201.82l.06.06a2%202%200%201%201-2.83%202.83l-.06-.06a1.65%201.65%200%200%200-1.82-.33%201.65%201.65%200%200%200-1%201.51V21a2%202%200%201%201-4%200v-.09A1.65%201.65%200%200%200%209%2019.4a1.65%201.65%200%200%200-1.82.33l-.06.06a2%202%200%201%201-2.83-2.83l.06-.06A1.65%201.65%200%200%200%204.68%2015a1.65%201.65%200%200%200-1.51-1H3a2%202%200%201%201%200-4h.09A1.65%201.65%200%200%200%204.6%209a1.65%201.65%200%200%200-.33-1.82l-.06-.06a2%202%200%201%201%202.83-2.83l.06.06A1.65%201.65%200%200%200%209%204.68a1.65%201.65%200%200%200%201-1.51V3a2%202%200%201%201%204%200v.09a1.65%201.65%200%200%200%201%201.51%201.65%201.65%200%200%200%201.82-.33l.06-.06a2%202%200%201%201%202.83%202.83l-.06.06A1.65%201.65%200%200%200%2019.4%209a1.65%201.65%200%200%200%201.51%201H21a2%202%200%201%201%200%204h-.09a1.65%201.65%200%200%200-1.51%201z%22%2F%3E%3C%2Fsvg%3E">
+<link rel="stylesheet" href="assets/hada-ui.css?v=beb0d95e">
+<style>
+/* 관리자 설정 화면 전용. 값은 assets/hada-ui.css 토큰만 쓴다(docs/DESIGN.md). */
+.centered #panel-title,.centered #panel-description,.centered #form-error{max-width:var(--form-max);margin-left:auto;margin-right:auto}
+.facts-dialog{max-width:var(--dialog-sm)}
+.help-dialog{max-width:var(--dialog-md)}
+.help-dialog .trigger,.help-dialog .note{margin:var(--space-3) 0 0;font-size:var(--text-small)}
+.item .check .item-help{margin-left:auto;flex-shrink:0}
+.help-desc{margin:var(--space-2) 0 0;color:var(--text-ink)}
+.help-dialog img{display:block;max-width:100%;height:auto;border:1px solid var(--brand-border);border-radius:var(--radius-md);margin:var(--space-3) 0}
+.aside-title{font-size:var(--text-lead)}
+.rules{font-size:var(--text-small);padding-left:var(--space-5);margin:var(--space-5) 0 0;color:var(--text-muted)}
+.rules li{margin:var(--space-2) 0}
+/* 대시보드: 비밀번호 | 웹훅 키 */
+.dash-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:var(--space-6)}
+.dash-col{border:1px solid var(--brand-border);border-radius:var(--radius-lg);padding:var(--space-5) var(--space-6);display:flex;flex-direction:column}
+.dash-col .subhead{margin-top:0}
+.dash-col .help{margin:0 0 var(--space-1)}
+.dash-col .status{flex:1;margin:var(--space-3) 0 var(--space-4)}
+.dash-col .wide{margin-top:0}
+/* 웹훅 키 */
+#new-webhook-key{font-family:var(--font-mono)}
+.cancel-box{margin-top:var(--space-5);padding:var(--space-3) var(--space-4);border:1px solid var(--brand-border);border-radius:var(--radius-md)}
+.cancel-box summary{cursor:pointer;font-weight:600;color:var(--danger-ink)}
+.cancel-box label{margin-top:var(--space-3)}
+.guide{border:1px solid var(--brand-border);border-radius:var(--radius-lg);padding:var(--space-4) var(--space-5);margin:var(--space-4) 0 var(--space-6);background:var(--brand-tint)}
+.guide summary{cursor:pointer;font-weight:700}
+.guide h4{margin:var(--space-4) 0 var(--space-1);font-size:var(--text-small)}
+.guide-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:var(--space-6);align-items:start}
+.guide .status{margin-bottom:0}
+/* "웹훅 보내기" 편집 화면 예시 */
+.mock{margin:var(--space-4) 0 0;border:1px solid var(--brand-border);border-radius:var(--radius-lg);padding:var(--space-4);background:var(--surface);box-shadow:var(--shadow-md);font-size:var(--text-label)}
+.mock-head{font-weight:700;font-size:var(--text-small);padding-bottom:var(--space-2);border-bottom:1px solid var(--divider);margin-bottom:var(--space-2)}
+.mock-head span,.mock-label span{font-weight:400;color:var(--text-muted);font-size:var(--text-caption)}
+.mock-label{color:var(--text-muted);margin:var(--space-2) 0 var(--space-1)}
+.mock-box,.mock-field{border:1px solid var(--divider);border-radius:var(--radius-sm);padding:var(--space-1) var(--space-2);background:var(--surface);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.mock-row{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-2)}
+.mock-field.hl{border:2px solid var(--danger-ink);background:var(--danger-soft);color:var(--danger-ink);font-weight:700}
+.mock-save{margin-top:var(--space-3);background:var(--info);color:var(--surface);text-align:center;border-radius:var(--radius-sm);padding:var(--space-1);font-weight:600}
+.mock figcaption{margin-top:var(--space-3);color:var(--text-muted);line-height:1.5}
+/* 진행률과 DB 카드 */
+.progress-head{display:flex;align-items:center;gap:var(--space-4);margin:var(--space-2) 0 var(--space-3)}
+.usage-summary{font-weight:600;margin:0;white-space:nowrap}
+.bar{flex:1;height:var(--space-2);background:var(--brand-soft);border-radius:var(--radius-pill);overflow:hidden}
+.bar span{display:block;height:100%;background:var(--success-ink);width:0;transition:width .3s}
+.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--space-4);align-items:stretch}
+.dbcard{border:1px solid var(--brand-border);border-radius:var(--radius-lg);padding:var(--space-3) var(--space-4);background:var(--surface)}
+.dbhead{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-1) var(--space-3);margin-bottom:var(--space-2)}
+.dbhead h4{margin:0;font-size:var(--text-lead)}
+.dbcount{font-size:var(--text-label);font-weight:700;color:var(--text-muted);background:var(--brand-soft);border-radius:var(--radius-pill);padding:0 var(--space-2)}
+.dbcount.complete{background:var(--success-soft);color:var(--success-ink)}
+.dblinks{flex-basis:100%;display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-2);font-size:var(--text-small);font-weight:600}
+.items{list-style:none;margin:0;padding:0}
+.item{padding:var(--space-2) 0;border-top:1px solid var(--divider)}
+.item .check{display:flex;gap:var(--space-3);align-items:flex-start;margin:0;font-weight:600;cursor:pointer}
+.item .check .kind{font-size:var(--text-caption);margin-left:var(--space-2);vertical-align:2px}
+.item input[type=checkbox]{width:var(--icon-md);height:var(--icon-md);margin:2px 0 0;flex-shrink:0;accent-color:var(--success-ink)}
+.item.done .name{color:var(--text-muted);text-decoration:line-through}
+.item.alert{background:var(--danger-soft)}
+.trigger,.note{color:var(--text-muted)}
+.trigger{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-1)}
+.trigger-label{font-weight:700;color:var(--text-subtle);margin-right:var(--space-1)}
+.trigger-label:not(:first-child){margin-left:var(--space-1)}
+.trig{display:inline-flex;align-items:center;gap:var(--space-1);padding:0 var(--space-2);border:1px solid var(--divider);border-radius:var(--radius-sm);background:var(--surface);color:var(--text-ink);font-weight:600}
+.box-icon svg.line{display:block;width:var(--icon-sm);height:var(--icon-sm)}
+.trig.box.on .box-icon{color:var(--info)}
+.trig.box .box-icon{color:var(--text-subtle)}
+.trigger-state{font-weight:700;color:var(--info-ink);margin-left:var(--space-1)}
+.trig-glyph{display:inline-flex;color:var(--text-subtle)}
+.trig-glyph svg.line{width:var(--icon-sm);height:var(--icon-sm)}
+.meta{display:flex;flex-wrap:wrap;gap:var(--space-1) var(--space-2);align-items:center;margin:var(--space-1) 0 0 var(--space-8);font-size:var(--text-caption)}
+.hint.bad{color:var(--danger-ink);font-weight:600}
+.hint.good{color:var(--success-ink)}
+.hint.none{color:var(--text-subtle)}
+/* 새 웹훅 키 막대: 체크리스트를 내려가도 위에 붙어 있어 URL과 키를 번갈아 복사할 수 있다 */
+.key-bar{position:sticky;top:var(--space-2);z-index:5;display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap;padding:var(--space-3) var(--space-4);margin:0 0 var(--space-4);background:var(--surface);border:1px solid var(--brand-border);border-radius:var(--radius-lg);box-shadow:var(--shadow-md)}
+.key-bar-label{font-weight:700;font-size:var(--text-small);white-space:nowrap}
+.key-bar-value{flex:1;min-width:0;overflow-wrap:anywhere;font-size:var(--text-small)}
+.key-bar .primary{min-height:var(--hit-area)}
+#key-bar-copy{display:inline-flex;align-items:center;justify-content:center;gap:var(--space-2)}
+.copies{display:flex;flex-wrap:nowrap;gap:var(--space-2);margin:var(--space-2) 0 0 var(--space-8)}
+.copy-btn{display:inline-flex;align-items:center;gap:var(--space-1);font-size:var(--text-caption);padding:2px var(--space-2)}
+.copy-icon{display:inline-flex;width:var(--icon-sm);height:var(--icon-sm)}
+.copy-btn.copied{border-color:var(--success);color:var(--success-ink)}
+.key-bar.missing .key-bar-value{font-family:var(--font-sans);color:var(--text-muted)}
+.links-row{display:flex;justify-content:flex-end;align-items:center;gap:var(--space-3);margin:var(--space-3) 0;font-size:var(--text-label)}
+@media(max-width:1100px){.cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:860px){.guide-grid,.dash-grid{grid-template-columns:minmax(0,1fr)}}
+/* 휴대폰: 키 막대는 붙어 다니지 않고(화면을 가리지 않게) 이름·버튼 한 줄, 키 값은 아래 한 줄 전체. 아래쪽 버튼은 가로 꽉 */
+@media(max-width:700px){.progress-head{flex-wrap:wrap}.cards{grid-template-columns:minmax(0,1fr)}.key-bar{position:static}.key-bar-label{flex-basis:100%}.key-bar-value{order:2;flex-basis:100%}#key-bar-show,#key-bar-copy{order:3;flex:1}.dash-foot .secondary{width:100%}}
+</style>
+</head>
+<body>
+<div class="shell">
+<nav class="top" aria-label="서비스 정보"><div class="brand"><img class="logo" src="assets/brand/hada-wordmark.png" alt="HADA" width="96" height="36"><div class="wordmark">하다<span>학원관리</span></div></div><div class="app-nav" id="app-nav"></div><div class="topright"><button class="ghost" id="open-facts" type="button">보안 설정 현황</button><button class="ghost" id="logout" type="button" hidden>로그아웃</button></div></nav>
+<header><h1>관리자 설정</h1><p class="muted">키오스크·법정 서류·학교 검색·수업 관리 화면에서 쓰는 관리자 비밀번호를 변경하고, 필요할 때 Notion 웹훅 키를 교체합니다.</p></header>
+<div class="notice info" role="status" id="connection-status"><strong>인증 서버 연결을 확인하고 있어요.</strong>비밀번호를 바꿔도 Notion 버튼·자동화의 웹훅 키는 바뀌지 않습니다.</div>
+<main class="layout">
+<section class="card" id="main-card" aria-labelledby="panel-title">
+<h2 id="panel-title">서버 연결 확인 중</h2>
+<p id="panel-description" class="muted">인증 서버의 설정 상태를 확인하고 있어요.</p>
+<form id="login-form" class="narrow" hidden>
+<label for="login-password">관리자 비밀번호</label><input type="password" id="login-password" autocomplete="current-password" maxlength="128" required>
+<p class="help">처음 설치한 학원은 초기 비밀번호 0000으로 로그인한 뒤 바로 변경합니다. 비밀번호는 브라우저에 저장하지 않습니다. 로그인은 법정 서류·학교 검색과 함께 쓰이고, 12시간이 지나거나 이 탭을 닫거나 로그아웃하면 해제됩니다.</p>
+<button class="primary" type="submit">로그인</button>
+</form>
+<form id="change-form" class="narrow" hidden>
+<label for="current-password">현재 비밀번호</label><input type="password" id="current-password" autocomplete="current-password" maxlength="128" required>
+<label for="new-password">새 관리자 비밀번호</label><input type="password" id="new-password" autocomplete="new-password" minlength="8" maxlength="128" required>
+<p class="help">앞뒤 공백 없이 8~128자. 초기 비밀번호 0000은 사용할 수 없습니다.</p>
+<label for="confirm-password">새 비밀번호 확인</label><input type="password" id="confirm-password" autocomplete="new-password" minlength="8" maxlength="128" required>
+<div class="status">변경하면 키오스크·법정 서류·학교 검색·수업 관리 화면의 로그인이 모두 해제되고 새 비밀번호로 다시 로그인합니다. Notion 웹훅 키는 그대로 유지됩니다.</div>
+<button class="primary" type="submit">비밀번호 변경</button>
+<button class="secondary wide" id="cancel-change" type="button">취소</button>
+</form>
+<div id="dashboard" hidden><div class="dash-grid">
+<section class="dash-col"><h3 class="subhead">관리자 비밀번호</h3><p class="help">키오스크·법정 서류·학교 검색·수업 관리 화면에서 씁니다.</p><div class="status" id="due-status"></div><button class="primary" id="start-change" type="button">비밀번호 변경</button></section>
+<section class="dash-col"><h3 class="subhead">Notion 웹훅 키</h3><p class="help">Notion 버튼·자동화가 서버를 부를 때 씁니다.</p><div class="status" id="webhook-summary"></div><button class="secondary wide" id="open-webhook" type="button">웹훅 키 교체</button></section>
+</div></div>
+<form id="webhook-form" class="narrow" hidden>
+<ol class="flow"><li>새 웹훅 키를 만들면 화면에 표시되고, 교체를 마칠 때까지 이 탭에서 언제든 다시 복사할 수 있습니다.</li><li>교체 기간에는 이전 키와 새 키가 모두 동작합니다. Notion 버튼·자동화의 키를 하나씩 바꿉니다.</li><li>이전 키로 들어오는 호출이 없어지면 교체를 완료합니다. 이때 이전 키가 삭제되어 더 이상 동작하지 않습니다.</li></ol>
+<label for="webhook-password">현재 관리자 비밀번호</label><input type="password" id="webhook-password" autocomplete="current-password" maxlength="128" required>
+<p class="help">유출이 의심될 때만 교체하세요. 관리자 비밀번호와 키오스크 로그인은 바뀌지 않습니다.</p>
+<button class="primary" type="submit">새 웹훅 키 만들기</button>
+<button class="secondary wide" id="webhook-back" type="button">돌아가기</button>
+</form>
+<div id="webhook-key" class="narrow" hidden>
+<label for="new-webhook-key">새 웹훅 키</label><input type="text" id="new-webhook-key" readonly autocomplete="off" spellcheck="false">
+<div class="actions"><button class="primary" id="copy-webhook-key" type="button">복사</button></div>
+<div class="status warn"><strong>교체를 마칠 때까지 이 탭의 교체 현황 화면 위쪽에서 언제든 다시 복사할 수 있습니다.</strong>교체를 완료·취소하거나 로그아웃·탭을 닫으면 지워지고, 서버는 키를 저장하지 않아 다시 보여 줄 수 없습니다. Notion 버튼·자동화의 <code>x-admin-key</code> 헤더(또는 본문 <code>adminKey</code>)를 이 값으로 바꿔 주세요. 채팅·문서·스크린샷에 남기지 마세요. 다른 탭·기기에서 키를 잃었다면 교체를 취소하고 다시 시작하세요.</div>
+<button class="secondary wide" id="webhook-key-done" type="button">교체 현황 보기</button>
+</div>
+<div id="webhook-progress" hidden>
+<div class="key-bar" id="key-bar" role="group" aria-label="새 웹훅 키"><span class="key-bar-label">새 웹훅 키</span><code class="key-bar-value" id="key-bar-value"></code><button class="ghost" id="key-bar-show" type="button">보기</button><button class="primary inline" id="key-bar-copy" type="button"><span class="copy-icon"></span>키 복사</button></div>
+<div class="status" id="webhook-started"></div>
+<details class="guide" open><summary>교체 방법 (공통) · 어디에 붙여 넣나요?</summary>
+<div class="guide-grid">
+<div>
+<h4><span class="kind button"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="3" width="11" height="7.5" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8.3 7.6l6 2.4-2.5 1-1 2.5z" fill="currentColor"/></svg>버튼</span></h4>
+<ol class="flow"><li>아래 DB 카드의 <strong>웹훅 등록</strong> 버튼을 누릅니다. 그 DB의 버튼만 모아 둔 "웹훅 등록" 보기가 열립니다.</li><li>바꿀 버튼 <strong>열의 머리글(열 이름)</strong>을 클릭하고 <strong>자동화 편집</strong>을 누릅니다.</li><li>작업 <strong>웹훅 보내기</strong>에서 키 <code>x-admin-key</code> 옆 <strong>값</strong> 칸을 새 키로 바꾸고 <strong>저장</strong>합니다. 새로 배포하는 학원은 <strong>URL</strong> 칸도 항목의 <strong>URL 복사</strong> 값으로 채우고, <strong>추가 헤더</strong>가 적힌 항목은 그 헤더도 넣습니다. 새 키는 위쪽 <strong>키 복사</strong>로 언제든 다시 복사합니다.</li><li>이 화면에서 그 항목을 체크합니다. 같은 DB의 다음 버튼으로 이어서 진행합니다.</li></ol>
+<h4><span class="kind auto"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9.6 1 3 9.2h4.2L6.3 15l6.7-8.3H8.7z" fill="currentColor"/></svg>자동화</span></h4>
+<ol class="flow"><li>카드의 <strong>DB 열기</strong>로 DB를 열고 오른쪽 위 <strong>번개 모양(자동화)</strong> 아이콘을 누릅니다.</li><li>목록에서 해당 자동화(예: 링크 비활성화)를 엽니다. 체크됨/체크 해제됨처럼 조건이 다른 자동화는 각각 따로 바꿉니다.</li><li>버튼과 같은 방법으로 <strong>웹훅 보내기 → 값</strong> 칸을 새 키로 바꾸고 저장합니다.</li><li>이 화면에서 체크합니다.</li></ol>
+</div>
+<figure class="mock" aria-label="웹훅 보내기 편집 화면 예시">
+<div class="mock-head">링크 재발급 <span><svg class="line inline-icon" viewBox="0 0 24 24" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg> 버튼·자동화 이름</span></div>
+<div class="mock-label">작업</div><div class="mock-box">{ } 웹훅 보내기</div>
+<div class="mock-label">URL <span>(그대로 둡니다)</span></div><div class="mock-field">https://…supabase.co/functions/v1/…</div>
+<div class="mock-row"><div><div class="mock-label">키 <span>(그대로)</span></div><div class="mock-field">x-admin-key</div></div><div><div class="mock-label">값</div><div class="mock-field hl">새 웹훅 키 붙여넣기</div></div></div>
+<div class="mock-save">저장</div>
+<figcaption>값 칸의 기존 내용을 모두 지우고(Ctrl+A → Delete) 새 키를 붙여 넣은 뒤 저장합니다. 모든 버튼·자동화에 <strong>같은 키</strong>를 넣습니다.</figcaption>
+</figure>
+</div>
+<div class="status warn"><strong>버튼을 눌러서 확인하지 않아도 됩니다.</strong>Notion은 버튼·자동화 설정을 외부에서 읽을 수 없어서, 바꿨는지는 직접 체크해야 합니다. 버튼을 누르면 실제 작업(보고서·알림톡 발송, 삭제, 종료 처리 등)이 실행되니 확인용으로 누르지 마세요. 평소 업무로 호출되면 각 항목 옆에 <em>새 키 호출 확인</em> 또는 <em>이전 키 호출 있음</em>이 자동으로 표시됩니다.</div>
+</details>
+<div class="progress-head"><p class="usage-summary" id="usage-summary"></p><div class="bar"><span id="progress-bar"></span></div></div>
+<div class="cards" id="db-cards"></div>
+<div class="links-row"><span class="muted" id="links-updated"></span><button class="ghost" id="links-refresh" type="button">Notion 링크 다시 찾기</button></div>
+<p class="help">출석 수동 동기화를 쓰면 GitHub Secret <code>ADMIN_SECRET</code>도 새 키로 바꿔야 합니다.</p>
+<div class="actions"><button class="secondary" id="webhook-refresh" type="button">새로고침</button><button class="primary" id="webhook-finish" type="button">교체 완료 (이전 키 삭제)</button></div>
+<details class="cancel-box"><summary>교체 취소</summary><p class="help">새 키를 버리고 이전 키만 다시 사용합니다. 이미 새 키로 바꾼 버튼은 다시 이전 키로 돌려야 합니다.</p><label for="cancel-password">현재 관리자 비밀번호</label><input type="password" id="cancel-password" autocomplete="current-password" maxlength="128"><button class="secondary wide" id="webhook-cancel" type="button">교체 취소</button></details>
+<button class="secondary wide" id="progress-back" type="button">돌아가기</button>
+</div>
+<p id="form-error" class="error" role="alert" hidden></p>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<button class="secondary" id="retry" type="button" hidden>연결 다시 확인</button>
+</section>
+</main>
+<dialog class="card help-dialog" id="help-dialog" aria-labelledby="help-title"><div class="dialog-head"><h2 class="aside-title" id="help-title">찾는 위치</h2><button class="ghost" id="close-help" type="button">닫기</button></div><div id="help-extra"></div><img id="help-image" alt="" hidden><p id="help-text" class="muted"></p></dialog>
+<dialog class="card facts-dialog" id="facts-dialog" aria-labelledby="security-title"><div class="dialog-head"><h2 class="aside-title" id="security-title">보안 설정 현황</h2><button class="ghost" id="close-facts" type="button" aria-label="닫기">닫기</button></div>
+<dl class="facts"><div><dt>비밀번호 상태</dt><dd id="owner-status">확인 중</dd></div><div><dt>마지막 비밀번호 변경일</dt><dd id="last-change">로그인 후 표시</dd></div><div><dt>다음 권장 변경일</dt><dd id="next-change">변경 완료 후 3개월 기준</dd></div><div><dt>웹훅 인증키</dt><dd id="webhook-fact">평소 유지 · 사고 시 별도 교체</dd></div></dl>
+<hr class="divider"><ul class="rules"><li>처음에는 초기 비밀번호 0000으로 로그인해 바로 변경</li><li>변경 전에는 키오스크·서류 화면을 사용할 수 없음</li><li>비밀번호를 바꾸면 내부 인증키도 함께 갱신</li><li>비밀번호를 바꿔도 Notion 웹훅 키는 그대로 유지</li><li>웹훅 키는 유출이 의심될 때만 별도로 교체</li><li>비밀번호를 잊으면 배포 담당자에게 초기화 요청</li></ul></dialog>
+<p class="foot"><strong>비밀번호는 타인에게 전달하지 마세요.</strong> 공용 기기에서는 사용 후 로그아웃하세요.</p>
+<noscript><p class="notice">관리자 설정을 사용하려면 JavaScript가 필요합니다.</p></noscript>
+</div>
+<script src="assets/hada-shortcuts.js?v=e1c30e10"></script>
+<script src="hada_config.js"></script><script src="admin_auth.js?v=4ffde89c"></script><script src="admin_settings.js?v=12a22add"></script>
+</body>
+</html>
