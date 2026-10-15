@@ -3,164 +3,274 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>법정 서류 출력</title>
+<title>법정 서류 | 하다 학원관리</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%236B5D4D%22%20stroke-width%3D%222.4%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cstyle%3E%40media(prefers-color-scheme%3Adark)%7Bsvg%7Bstroke%3A%23E6D7C4%7D%7D%3C%2Fstyle%3E%3Cpath%20d%3D%22M14%202H6a2%202%200%200%200-2%202v16a2%202%200%200%200%202%202h12a2%202%200%200%200%202-2V8z%22%2F%3E%3Cpolyline%20points%3D%2214%202%2014%208%2020%208%22%2F%3E%3Cline%20x1%3D%2216%22%20y1%3D%2213%22%20x2%3D%228%22%20y2%3D%2213%22%2F%3E%3Cline%20x1%3D%2216%22%20y1%3D%2217%22%20x2%3D%228%22%20y2%3D%2217%22%2F%3E%3C%2Fsvg%3E">
+<link rel="stylesheet" href="assets/hada-ui.css?v=beb0d95e">
 <style>
-  :root {
-    --text-primary: #2C2C2B;
-    --text-secondary: #7D7A75;
-    --canvas: #FFFFFF;
-    --surface: #F9F8F7;
-    --surface-2: #F0EFED;
-    --border: #E6E5E3;
-    --blue: #2783DE;
-    --blue-soft: #E5F2FC;
-    --red: #E56458;
-  }
-  * { box-sizing: border-box; }
-  html, body {
-    margin: 0; padding: 0;
-    background: var(--surface);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", Roboto, Helvetica, Arial, sans-serif;
-    color: var(--text-primary);
-    font-size: 14px;
-  }
-  #login-screen {
-    display: none; min-height: 100vh; align-items: center; justify-content: center; flex-direction: column;
-  }
-  #login-screen .box {
-    background: var(--canvas); border: 1px solid var(--border); border-radius: 12px; padding: 32px;
-    width: min(90vw, 320px); display: flex; flex-direction: column; gap: 10px;
-  }
-  #login-screen h1 { font-size: 16px; margin: 0 0 8px; text-align: center; }
-  #login-input, #login-btn { padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); font-size: 14px; }
-  #login-btn { background: var(--blue); color: #fff; border: none; cursor: pointer; }
-  .login-error { color: var(--red); font-size: 12px; min-height: 14px; text-align: center; }
-
-  #app-screen { display: none; flex-direction: column; min-height: 100vh; }
-  header.app-header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 14px 20px; background: var(--canvas); border-bottom: 1px solid var(--border);
-  }
-  header.app-header h1 { font-size: 16px; margin: 0; }
-  header.app-header button { background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 13px; }
-
-  main { padding: 20px; display: flex; flex-direction: column; gap: 16px; max-width: 1200px; width: 100%; margin: 0 auto; }
-
-  .panel { background: var(--canvas); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
-
-  .doc-type-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
-  .doc-type-tabs button {
-    padding: 8px 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2);
-    cursor: pointer; font-size: 13px; color: var(--text-primary);
-  }
-  .doc-type-tabs button.active { background: var(--blue); color: #fff; border-color: var(--blue); }
-
-  .filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; margin-top: 14px; }
-  .filters .field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-secondary); }
-  .filters input, .filters select {
-    padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border); font-size: 13px; min-width: 140px;
-  }
-  .filters button {
-    padding: 9px 18px; border-radius: 6px; border: none; background: var(--blue); color: #fff; cursor: pointer; font-size: 13px;
-  }
-
-  .toolbar { display: flex; gap: 8px; justify-content: flex-end; }
-  .toolbar button {
-    padding: 8px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-2); cursor: pointer; font-size: 13px;
-  }
-
-  #doc-status { font-size: 13px; color: var(--text-secondary); }
-
-  #print-area { background: #fff; padding: 24px; }
+/* 법정 서류 화면 전용. 조회 화면은 assets/hada-ui.css 토큰만 쓴다(docs/DESIGN.md).
+   아래 "인쇄 문서" 구역은 출석부·대장·영수증 공식 서식(검은 글자·회색 선·mm 단위)이라 화면 토큰 대신 인쇄 규칙을 따른다. */
+/* 필터 한 줄: 시작일·종료일·클래스·학생·검색·[조회]. 좁아지면 3칸, 휴대폰은 한 칸씩 */
+.filters{display:grid;grid-template-columns:repeat(4,minmax(0,1fr)) minmax(0,1.2fr) auto;gap:var(--space-3);align-items:end;margin-top:var(--space-5)}
+.filters .field{display:flex;flex-direction:column;gap:var(--space-1);min-width:0}
+.filters .field label{margin:0;font-size:var(--text-label);color:var(--text-muted);font-weight:600}
+.filters .field input,.filters .field select{width:100%;min-width:0}
+.query-actions{display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap;min-width:0}
+#doc-status{overflow-wrap:anywhere}
+.meta-line{margin:var(--space-3) 0 0;font-size:var(--text-label);color:var(--text-muted)}
+/* 결과 카드 위쪽: 출력 안내(왼쪽)와 인쇄·엑셀(오른쪽) */
+.toolbar{display:flex;gap:var(--space-2);justify-content:flex-end;align-items:center;flex-wrap:wrap;padding:var(--space-5) var(--space-6) 0}
+.export-note{margin-right:auto;font-size:var(--text-label);color:var(--text-muted);line-height:1.5}
+/* 출력 전 확인: 공용 주의 상자(.status.warn) 안에 서버가 준 목록 */
+#document-warnings[hidden]{display:none}
+#document-warnings .warnings{border:0;background:none;padding:0;margin:0;font-size:inherit}
+#document-warnings ul{margin:var(--space-2) 0 0;padding-left:var(--space-5)}
+#receipt-layout-field:not([hidden]){display:inline-flex;align-items:center;gap:var(--space-2);margin:0;font-size:var(--text-small);font-weight:600}
+#receipt-layout{width:auto;height:var(--control-h)}
+.toolbar .secondary{white-space:nowrap}
+.empty-note{text-align:center;color:var(--text-subtle);margin:var(--space-8) 0}
+.doc-pane[hidden]{display:none!important}
+/* 표 머리 정렬·필터 버튼과 메뉴 */
+.column-action{display:inline-flex;align-items:center;gap:2px;vertical-align:middle;padding:2px var(--space-1);margin-left:2px;border:0;border-radius:var(--radius-sm);background:transparent;color:var(--brand-deep);font-size:var(--text-caption);line-height:1.2}
+.column-action svg.line{width:var(--icon-sm);height:var(--icon-sm)}
+.column-action:hover,.column-action:focus-visible{background:var(--brand-soft)}
+.column-action,.view-summary button{position:relative}
+.column-action::after,.view-summary button::after{content:"";position:absolute;left:50%;top:50%;width:max(100%,var(--hit-min));height:max(100%,var(--hit-min));transform:translate(-50%,-50%)}
+.column-action.filtered{background:var(--brand-soft);box-shadow:inset 0 0 0 1px var(--brand-deep)}
+.view-summary{display:flex;gap:var(--space-3);flex-wrap:wrap;align-items:center;margin:var(--space-2) 0 var(--space-4);font-size:var(--text-caption);color:var(--text-muted)}
+.view-summary button{border:1px solid var(--brand-border);border-radius:var(--radius-sm);background:var(--surface);padding:var(--space-1) var(--space-2)}
+.column-menu{position:fixed;z-index:1000;display:flex;gap:var(--space-2);align-items:center;width:var(--menu-w);max-width:calc(100vw - var(--space-4));padding:var(--space-2);border:1px solid var(--brand-border);border-radius:var(--radius-lg);box-shadow:var(--shadow-md);background:var(--surface);font-size:var(--text-small)}
+.column-menu[hidden]{display:none}
+/* 정렬 한 버튼(누를 때마다 오름차순 → 내림차순 → 원래 순서)과 열 검색 칸만. 바깥을 누르거나 Esc·Enter면 닫힌다 */
+.column-menu .sort-toggle{display:inline-flex;align-items:center;justify-content:flex-start;gap:var(--space-1);flex-shrink:0;min-width:calc(4em + var(--icon-sm) + var(--space-1) + var(--space-3) * 2);white-space:nowrap;padding:var(--space-2) var(--space-3);border:1px solid var(--brand-border);border-radius:var(--radius-md);background:var(--brand-tint);color:var(--text-ink);font-weight:600}
+.column-menu .sort-toggle[aria-pressed=true]{background:var(--brand-soft);border-color:var(--brand-deep)}
+.column-menu .sort-toggle svg.line{width:var(--icon-sm);height:var(--icon-sm)}
+.column-menu input{flex:1;min-width:0;height:auto;margin:0;padding:var(--space-2) var(--space-3)}
+:root{--menu-w:300px}
+#print-panel{padding:0;overflow:hidden}
+/* 조회 전에는 빈 출력 카드를 숨긴다 */
+#print-panel:has(#print-area:empty){display:none}
+@media(max-width:1080px){.filters{grid-template-columns:repeat(3,minmax(0,1fr))}.query-actions .primary{width:100%}}
+@media(max-width:700px){.filters{grid-template-columns:minmax(0,1fr)}.query-actions .primary{width:100%}#doc-type-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;border-radius:var(--radius-lg)}#doc-type-tabs button{white-space:nowrap;padding:var(--space-2) var(--space-1);font-size:var(--text-label)}.toolbar{justify-content:stretch;padding:var(--space-5) var(--space-5) 0}.export-note{flex-basis:100%}.toolbar .secondary{flex:1}}
+/* design-lint: print-document */
+  table.doc-table td.note-cell { text-align:left; white-space:normal; overflow-wrap:anywhere; }
+  .table-scroll table.doc-table th.has-column-tools { white-space:normal; }
+  @media screen { .table-scroll table.doc-table th.has-column-tools { white-space:nowrap; } }
+  .head-label { display:inline-block; }  #print-area { background: #fff; padding: 24px; }
   #print-area h2 { text-align: center; font-size: 18px; margin: 0 0 4px; }
-  #print-area .doc-sub { text-align: center; font-size: 12px; color: var(--text-secondary); margin-bottom: 16px; }
+  #print-area .doc-sub { text-align: center; font-size: 12px; color: var(--text-muted); margin-bottom: 16px; }
   table.doc-table { width: 100%; border-collapse: collapse; font-size: 12px; }
   table.doc-table th, table.doc-table td { border: 1px solid #999; padding: 4px 6px; text-align: center; }
   table.doc-table th { background: #f2f2f2; }
-  table.doc-table td.name-cell, table.doc-table th.name-cell { text-align: left; white-space: nowrap; }
-  .legend { margin-top: 10px; font-size: 12px; color: var(--text-secondary); }
+  table.doc-table td.name-cell, table.doc-table th.name-cell { text-align: center; white-space: nowrap; }
+  .legend { margin-top: 10px; font-size: 12px; color: var(--text-muted); }
   .sign-line { margin-top: 40px; text-align: right; font-size: 13px; }
 
+  .warnings { border:1px solid #e5bd74; background:#fff7e7; padding:10px 12px; margin-bottom:16px; font-size:12px; line-height:1.6; }
+  .attendance-class { margin-bottom:32px; }
+  .class-register, .class-receipt-list { margin-bottom:24px; }
+  .class-register h3 { font-size:14px; margin:12px 0; }
+  table.register-table { table-layout:fixed; }
+  table.register-table th, table.register-table td { text-align:center; vertical-align:middle; }
+  table.register-table td:nth-child(3) { text-align:left; white-space:normal; word-break:normal; overflow-wrap:anywhere; line-height:1.5; }
+  table.register-table td:nth-child(4), table.register-table td:nth-child(5), table.register-table td:nth-child(6) { white-space:nowrap; }
+  .receipt-sets { display:grid; grid-template-columns:minmax(0,1fr); gap:32px; align-items:start; }
+  .receipt-page { width:100%; max-width:180mm; margin:0 auto; min-width:0; }
+  .receipt-pair { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .receipt-copy { min-width:0; padding:14px 0; }
+  .receipt-copy h3 { text-align:center; min-height:36px; margin:0; font-size:16px; display:flex; align-items:center; justify-content:center; }
+  .receipt-context { font-size:11px; line-height:1.5; margin-bottom:10px; overflow-wrap:anywhere; }
+  table.receipt-official { table-layout:fixed; margin-top:0; font-size:12px; }
+  table.receipt-official th, table.receipt-official td { background:#fff; border:1px solid #777; vertical-align:middle; overflow-wrap:anywhere; font-weight:normal; padding:8px 5px; }
+  .receipt-official .receipt-top td { height:42px; }
+  .receipt-official .payer-row td, .receipt-official .payer-row th { height:56px; }
+  .receipt-official .payment-row td { height:72px; }
+  .receipt-official .receipt-footer td { padding:12px 10px; line-height:1.7; }
+  .receipt-value { display:block; margin-top:8px; text-align:center; }
+  table.receipt-official .receipt-data { text-align:left; }
+  table.receipt-official td.receipt-footer-cell { padding:12px 10px; }
+  .receipt-footer-inner { display:flex; flex-direction:column; gap:10px; }
+  .receipt-confirm { text-align:center; }
+  .receipt-footer-inner .receipt-footer-note { text-align:left; line-height:1.6; }
+  .receipt-footer-inner .receipt-date { display:flex; justify-content:flex-end; gap:16px; margin:0; padding:4px 0; }
+  .receipt-footer-bottom { display:flex; justify-content:space-between; gap:10px; align-items:flex-end; }
+  .receipt-footer-bottom .receipt-issuer { text-align:left; line-height:1.5; font-size:11px; }
+  .receipt-footer-bottom .receipt-signature { text-align:right; margin:0; font-size:10px; }
+  .receipt-date { text-align:right; margin:18px 0; }
+  .receipt-issuer { text-align:left; }
+  .receipt-signature { text-align:right; margin-top:8px; }
+  .receipt-footer-note { font-size:10px; }
+  table.receipt-official .payer-label td, table.receipt-official .payer-value td { padding:4px 5px; height:28px; }
+  .receipt-date-row td { height:52px; }
+  .receipt-bottom td { height:64px; }
+  .receipt-official .expense-labels td { height:20px; padding:2px; }
+  .screen-only { display:block; }
+  .table-scroll-hint { margin:6px 0; font-size:12px; color:var(--text-muted); }
+  @media screen {
+    #print-panel, #print-area { min-width:0; max-width:100%; }
+    .table-scroll { width:100%; max-width:100%; overflow-x:auto; overscroll-behavior-x:contain; -webkit-overflow-scrolling:touch; }
+    .table-scroll:focus-visible { outline:2px solid var(--brand-deep); outline-offset:3px; }
+    .table-scroll .doc-table { font-size:13px; }
+    .table-scroll .doc-table th, .table-scroll .doc-table td { padding:8px 10px; }
+    .table-scroll .doc-table th { white-space:nowrap; }
+    .table-scroll .doc-table:not(.attendance-table) { min-width:calc(var(--columns, 6) * 120px); }
+    .table-scroll .doc-table:not(.attendance-table) td { min-width:96px; max-width:360px; overflow-wrap:anywhere; }
+    .table-scroll .register-table { min-width:900px !important; }
+    .table-scroll table.doc-table.register-table td { min-width:0; max-width:none; }
+    .attendance-table { --name-width:104px; --day-width:80px; table-layout:fixed; border-collapse:separate !important; border-spacing:0;
+      min-width:calc(var(--name-width) + var(--day-count) * var(--day-width)); }
+    .attendance-table col:first-child { width:var(--name-width); }
+    .table-scroll .attendance-table th, .table-scroll .attendance-table td { border-width:0 1px 1px 0; padding:8px 6px; }
+    .attendance-table tr > :first-child { border-left-width:1px !important; }
+    .attendance-table thead tr:first-child > th { border-top-width:1px; }
+    .table-scroll .attendance-table tr > :first-child { position:sticky; z-index:2; background:#fff; white-space:normal; word-break:keep-all; overflow-wrap:anywhere; }
+    .table-scroll .attendance-table thead tr > :first-child { z-index:3; background:#f2f2f2; }
+    .attendance-table tr > :first-child { left:0; box-shadow:3px 0 4px -3px #666; }
+    .attendance-table tr > :nth-child(n+2) { white-space:nowrap; }
+    .table-scroll table.attendance-table th.has-column-tools:nth-child(n+2) { white-space:nowrap; }
+    .attendance-table th:nth-child(n+2) .head-label { white-space:nowrap; overflow-wrap:normal; word-break:normal; }
+  }
+  @media screen and (max-width:650px) {
+    #print-area { padding:12px; }
+    .receipt-pair { grid-template-columns:1fr; }
+    .attendance-table { --name-width:88px; }
+    .table-scroll .doc-table { font-size:12px; }
+    .toolbar { flex-wrap:wrap; }
+  }
   @media print {
-    header.app-header, .panel:not(#print-panel), .toolbar { display: none !important; }
+    .column-action, .column-menu, .view-summary { display:none !important; }
+    .table-scroll { overflow:visible !important; width:auto; max-width:none; }
+    .table-scroll-hint { display:none !important; }
+    #document-warnings, .warnings, .screen-only { display:none !important; }
+    .receipt-sets { display:block; }
+    .receipt-page { width:100%; max-width:180mm; margin:0 auto; break-inside:avoid; break-after:page; page-break-after:always; }
+    .receipt-page:last-child { break-after:auto; page-break-after:auto; }
+    .receipt-pair { grid-template-columns:1fr 1fr; gap:5mm; }
+    .receipt-copy { padding:0; }
+    .receipt-copy h3 { font-size:14px; min-height:10mm; margin:0; }
+    .receipt-official .receipt-top td { height:12mm; }
+    .receipt-official .payer-row td, .receipt-official .payer-row th { height:15mm; }
+    .receipt-official .payment-row td { height:18mm; }
+    table.receipt-official { font-size:10px; }
+
+    .class-register + .class-register, .class-receipt-list + .class-receipt-list { break-before:page; page-break-before:always; }
+    .class-register, .class-receipt-list { break-inside:auto; }
+    .class-register h2, .class-register h3, .class-receipt-list h2, .class-receipt-list h3 { break-after:avoid; }
+    .attendance-class + .attendance-class { break-before:page; page-break-before:always; }
+    .attendance-class h2 { break-after:avoid; }
+    .attendance-class .doc-sub { break-after:avoid; }
+    table.attendance-table { table-layout:fixed; width:100%; font-size:9px; }
+    .attendance-table col:first-child { width:26mm; }
+    .table-scroll .attendance-table th, .table-scroll .attendance-table td { padding:4px 1px; text-align:center; }
+    .attendance-table th { white-space:nowrap; }
+    .attendance-table td { overflow-wrap:anywhere; }
+    .attendance-table td:first-child { white-space:normal; word-break:keep-all; }
+    thead {display:table-header-group;}
+    tr {break-inside:avoid;}
+
+    .top, header, #login-screen, .query-card, .toolbar, .foot { display: none !important; }
     body { background: #fff; }
-    main { padding: 0; max-width: none; }
+    .shell { padding: 0; max-width: none; }
     #print-panel { border: none; padding: 0; }
   }
+/* design-lint: end */
 </style>
 </head>
 <body>
+<div class="shell">
+<nav class="top" aria-label="서비스 정보"><div class="brand"><img class="logo" src="assets/brand/hada-wordmark.png" alt="HADA" width="96" height="36"><div class="wordmark">하다<span>학원관리</span></div></div><div class="app-nav" id="app-nav"></div><div class="topright"><button class="ghost" id="logout-btn" type="button" hidden>로그아웃</button></div></nav>
+<header><h1>법정 서류</h1><p class="muted">수강생 출석부·수강생 대장·교습비등 영수증 원부·현금출납부를 기간별로 조회하고 인쇄(PDF)·엑셀로 내려받습니다.</p></header>
+<p class="notice info" id="doc-status" role="status" aria-live="polite" aria-atomic="true">관리자 비밀번호로 로그인하세요.</p>
 
-<div id="login-screen">
-  <div class="box">
-    <h1>🔒 법정 서류 출력 (관리자용)</h1>
-    <input type="password" id="login-input" placeholder="관리자 비밀번호" autocomplete="current-password">
-    <button id="login-btn" onclick="submitLogin()">로그인</button>
-    <div class="login-error" id="login-error"></div>
-  </div>
-</div>
+<section class="card" id="login-screen" hidden><div class="narrow">
+  <h2>관리자 확인</h2>
+  <label for="login-input">관리자 비밀번호</label>
+  <input type="password" id="login-input" autocomplete="current-password">
+  <p class="help">관리자 설정과 같은 비밀번호입니다. 로그인은 관리자 설정·학교 검색과 함께 쓰이고, 이 탭을 닫거나 로그아웃하면 해제됩니다.</p>
+  <button class="primary" id="login-btn" onclick="submitLogin()">로그인</button>
+  <p class="error" id="login-error"></p>
+</div></section>
 
-<div id="app-screen">
-  <header class="app-header">
-    <h1>📑 법정 서류 출력</h1>
-    <button id="logout-btn">로그아웃</button>
-  </header>
-  <main>
-    <div class="panel">
-      <div class="doc-type-tabs" id="doc-type-tabs">
-        <button data-type="attendance" class="active">수강생 출석부</button>
-        <button data-type="student-register">수강생 대장</button>
-        <button data-type="receipt-ledger">교습비등 영수증 원부</button>
-        <button data-type="cash-journal">현금출납부</button>
-      </div>
-      <div class="filters">
-        <div class="field"><label>시작일</label><input type="date" id="f-start"></div>
-        <div class="field"><label>종료일</label><input type="date" id="f-end"></div>
-        <div class="field"><label>클래스</label><select id="f-class"><option value="">전체</option></select></div>
-        <div class="field"><label>학생</label><select id="f-student"><option value="">전체</option></select></div>
-        <div class="field"><label>검색(이름)</label><input type="text" id="f-search" placeholder="학생 이름"></div>
-        <button id="btn-sync" title="클래스·학생 명단만 빠르게 불러옵니다">🔄 명단 동기화</button>
-        <button id="btn-query">조회</button>
-      </div>
-      <div id="sync-status" style="margin-top:6px;font-size:12px;color:var(--text-secondary)">클래스·학생 명단이 아직 동기화되지 않았습니다. [🔄 명단 동기화]를 먼저 눌러주세요.</div>
-      <div id="doc-status" style="margin-top:8px"></div>
+<div id="app-screen" hidden>
+  <section class="card query-card">
+    <div class="tabs" id="doc-type-tabs">
+      <button data-type="attendance" class="active">수강생 출석부</button>
+      <button data-type="student-register">수강생 대장</button>
+      <button data-type="receipt-ledger">교습비등 영수증 원부</button>
+      <button data-type="cash-journal">현금출납부</button>
     </div>
+    <div class="filters">
+      <div class="field"><label for="f-start">시작일</label><input type="date" id="f-start"></div>
+      <div class="field"><label for="f-end">종료일</label><input type="date" id="f-end"></div>
+      <div class="field fixed-select-field"><label for="f-class">클래스</label><select id="f-class"><option value="">전체 클래스</option></select></div>
+      <div class="field fixed-select-field"><label for="f-student">학생</label><select id="f-student" disabled><option value="">클래스를 먼저 선택하세요</option></select></div>
+      <div class="field"><label for="f-search">검색(이름)</label><input type="text" id="f-search" placeholder="학생 이름"></div>
+      <div class="query-actions"><button class="primary inline" id="btn-query" aria-busy="false">조회</button></div>
+    </div>
+    <p class="meta-line"><span id="meta-status" role="status" aria-live="polite"></span> <button class="ghost" id="btn-meta-retry" type="button" hidden>재시도</button></p>
+  </section>
 
+  <div class="status warn" id="document-warnings" hidden aria-live="polite"></div>
+  <section class="card" id="print-panel">
     <div class="toolbar">
-      <button id="btn-print">🖨️ 인쇄(PDF)</button>
-      <button id="btn-word">⬇️ Word로 다운로드</button>
+      <span class="export-note">PDF·엑셀: 원래 조회 결과 전체 출력 (화면 정렬·필터 미반영)</span>
+      <label id="receipt-layout-field" hidden>영수증 출력 방식 <select id="receipt-layout"><option value="list">관리용 목록</option><option value="form">원부·영수증 서식</option></select></label>
+      <button class="secondary" id="btn-print" disabled>인쇄(PDF)</button>
+      <button class="secondary" id="btn-excel" disabled>Excel 다운로드</button>
     </div>
-
-    <div class="panel" id="print-panel">
-      <div id="print-area">
-        <p style="text-align:center;color:#999">위에서 서류 종류와 기간을 선택한 뒤 [조회]를 눌러주세요.</p>
-      </div>
+    <div id="print-area">
+      <p class="empty-note">위에서 서류 종류와 기간을 선택한 뒤 [조회]를 눌러주세요.</p>
     </div>
-  </main>
+  </section>
 </div>
-
+<p class="foot"><strong>출력한 서류에는 개인정보가 있습니다.</strong> 공용 기기에서는 사용 후 로그아웃하세요.</p>
+</div>
+<div id="column-menu" class="column-menu" role="dialog" aria-label="열 정렬 및 필터" hidden></div>
+<script src="hada_config.js"></script>
+<script src="admin_auth.js?v=4ffde89c"></script>
+<script src="assets/hada-shortcuts.js?v=e1c30e10"></script>
 <script>
-  const SUPABASE_URL = "https://dtltoanvjgrqkmsqxhvh.supabase.co";
-  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR0bHRvYW52amdycWttc3F4aHZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA2NjM0MjQsImV4cCI6MjEwNjIzOTQyNH0.k4LZeh6OqjWaUpeU0hDAWZvwAxJnjZI3rSnqXp8ROvE";
-  const ADMIN_KEY_STORAGE = "admin_key";
-  function getAdminKey() { return localStorage.getItem(ADMIN_KEY_STORAGE) || ""; }
+  // 학원 연결 설정은 hada_config.js에서 읽는다(HadaAdminAuth.config). 없거나 잘못되면 로그인 화면에 알린다.
+  let SUPABASE_URL = "", SUPABASE_ANON_KEY = "", CONFIG_ERROR = "";
+  try { ({ url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY } = HadaAdminAuth.config()); } catch (e) { CONFIG_ERROR = e.message; }
+  // 로그인은 관리자 설정·학교 검색과 같은 탭 안에서 공유한다(admin_auth.js). 키오스크의 "admin_key"와는 따로 둔다.
+  function getAdminKey() { return HadaAdminAuth.savedSession(); }
 
   function showLoginScreen(errorMsg) {
-    document.getElementById("login-screen").style.display = "flex";
-    document.getElementById("app-screen").style.display = "none";
+    metaRequestId++;
+    docRequestId++;
+    loadedDocument = null;
+    authGeneration++;tabStates.clear();closeColumnMenu();menu.replaceChildren();
+    currentDocType="attendance";
+    document.querySelectorAll("#doc-type-tabs button").forEach(b=>b.classList.toggle("active",b.dataset.type===currentDocType));
+    document.getElementById("f-search").value="";
+    document.getElementById("receipt-layout").value="list";
+    document.getElementById("receipt-layout-field").hidden=true;
+    classSel.replaceChildren(new Option("전체 클래스",""));classSel.disabled=true;
+    resetStudents("클래스를 먼저 선택하세요");setDefaultDates();
+    document.getElementById("print-area").replaceChildren();
+    document.getElementById("document-warnings").replaceChildren();document.getElementById("document-warnings").hidden=true;
+    showDocStatus("관리자 비밀번호로 로그인하세요.");
+    metaLoading=false;metaUnavailable=false;
+    queryBtn.textContent="조회";queryBtn.classList.remove("loading");queryBtn.setAttribute("aria-busy","false");
+    document.getElementById("btn-print").disabled=true;
+    document.getElementById("btn-excel").disabled = true;
+    document.getElementById("login-screen").hidden = false;
+    document.getElementById("app-screen").hidden = true;
+    document.getElementById("logout-btn").hidden = true;
     document.getElementById("login-error").textContent = errorMsg || "";
     document.getElementById("login-input").value = "";
     setTimeout(() => document.getElementById("login-input").focus(), 50);
   }
-  async function showAppScreen() {
-    document.getElementById("login-screen").style.display = "none";
-    document.getElementById("app-screen").style.display = "flex";
-    loadMetaFromCache();
+  async function showAppScreen(initialClasses) {
+    document.getElementById("login-screen").hidden = true;
+    document.getElementById("app-screen").hidden = false;
+    document.getElementById("logout-btn").hidden = false;
     setDefaultDates();
+    await loadClasses(initialClasses);
   }
   document.getElementById("logout-btn").addEventListener("click", () => {
     if (!confirm("로그아웃 하시겠습니까?")) return;
-    localStorage.removeItem(ADMIN_KEY_STORAGE);
+    HadaAdminAuth.saveSession("");
     showLoginScreen();
   });
 
@@ -175,7 +285,7 @@
       },
       body: JSON.stringify(body),
     });
-    if (res.status === 401) { showLoginScreen("비밀번호가 올바르지 않습니다."); throw new Error("인증 실패"); }
+    if (res.status === 401) { HadaAdminAuth.saveSession(""); showLoginScreen("로그인이 만료되었거나 비밀번호가 바뀌었습니다. 다시 로그인해 주세요."); throw new Error("인증 실패"); }
     const json = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(json.error || `서버 오류: ${res.status}`);
     return json;
@@ -187,30 +297,45 @@
     const btn = document.getElementById("login-btn");
     const errEl = document.getElementById("login-error");
     if (!key) { errEl.textContent = "비밀번호를 입력하세요."; return; }
-    btn.disabled = true; btn.textContent = "확인 중..."; errEl.textContent = "";
+    if (CONFIG_ERROR) { errEl.textContent = CONFIG_ERROR; return; }
+    btn.disabled = true; btn.classList.add("loading"); btn.setAttribute("aria-busy","true"); errEl.textContent = "";
     try {
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/list-students`, {
-        headers: { "x-admin-key": key, "Authorization": `Bearer ${SUPABASE_ANON_KEY}`, "apikey": SUPABASE_ANON_KEY },
+      const session = await HadaAdminAuth.login(SUPABASE_URL, key);
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/get-legal-document-data`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-key": session, "Authorization": `Bearer ${SUPABASE_ANON_KEY}`, "apikey": SUPABASE_ANON_KEY },
+        body: JSON.stringify({ action: "classes" }),
       });
-      if (res.status === 401) { errEl.textContent = "비밀번호가 올바르지 않습니다."; btn.disabled = false; btn.textContent = "로그인"; return; }
-      if (!res.ok) throw new Error(`서버 오류: ${res.status}`);
-      localStorage.setItem(ADMIN_KEY_STORAGE, key);
-      await showAppScreen();
+      if (res.status === 401) { errEl.textContent = "비밀번호가 올바르지 않습니다."; return; }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `서버 오류: ${res.status}`);
+      if (!Array.isArray(data.classes)) throw new Error("클래스 목록을 확인할 수 없습니다.");
+      HadaAdminAuth.saveSession(session);
+      input.value = "";
+      await showAppScreen(data.classes);
     } catch (err) {
       errEl.textContent = "로그인에 실패했습니다: " + err.message;
     } finally {
-      btn.disabled = false; btn.textContent = "로그인";
+      btn.disabled = false; btn.classList.remove("loading"); btn.removeAttribute("aria-busy");
     }
   }
   document.getElementById("login-input").addEventListener("keydown", (e) => { if (e.key === "Enter") submitLogin(); });
 
   let currentDocType = "attendance";
-  document.getElementById("doc-type-tabs").addEventListener("click", (e) => {
-    const btn = e.target.closest("button[data-type]");
-    if (!btn) return;
-    document.querySelectorAll("#doc-type-tabs button").forEach((b) => b.classList.remove("active"));
-    btn.classList.add("active");
-    currentDocType = btn.dataset.type;
+  let loadedDocument = null;
+  let docRequestId = 0;
+  const tabStates = new Map();
+  let authGeneration = 0;
+  let metaLoading = false;
+  let metaUnavailable = false;
+  document.getElementById("doc-type-tabs").addEventListener("click", e=>{
+    const btn=e.target.closest("button[data-type]");
+    if(!btn || btn.dataset.type===currentDocType || classSel.disabled)return;
+    saveCurrentTab();closeColumnMenu();metaRequestId++;
+    currentDocType=btn.dataset.type;
+    document.querySelectorAll("#doc-type-tabs button").forEach(b=>b.classList.toggle("active",b===btn));
+    const state=getTabState();restoreTabControls(state);showCurrentTab();
+    if(metaLoading)loadClassStudents();
   });
 
   function setDefaultDates() {
@@ -222,157 +347,516 @@
     document.getElementById("f-end").value = last;
   }
 
-  // [NEW] 클래스(학원) DB·등록(학원) DB 전체를 훑는 건 느리므로, 조회할 때마다 자동으로 하지
-  // 않고 [🔄 명단 동기화] 버튼을 눌렀을 때만 한 번 불러와 localStorage에 캐시해둔다. 캐시가
-  // 있으면 재접속 시에도 즉시 드롭다운을 채운다 (실제 수강 등록 변경 시에는 다시 동기화 필요).
-  const META_CACHE_KEY = "legal_docs_meta_cache";
+  // 초기에는 클래스만 조회하고, 반 선택 시 그 반의 학생만 조회한다.
+  let metaRequestId = 0;
+  let retryMeta = null;
+  const classSel = document.getElementById("f-class");
+  const studentSel = document.getElementById("f-student");
+  const queryBtn = document.getElementById("btn-query");
+  const retryBtn = document.getElementById("btn-meta-retry");
 
-  function fillMetaSelects(meta) {
-    const classSel = document.getElementById("f-class");
-    const studentSel = document.getElementById("f-student");
-    classSel.innerHTML = '<option value="">전체</option>';
-    studentSel.innerHTML = '<option value="">전체</option>';
-    (meta.classes || []).forEach((c) => {
-      const opt = document.createElement("option"); opt.value = c.id; opt.textContent = c.name; classSel.appendChild(opt);
-    });
-    (meta.students || []).forEach((s) => {
-      const opt = document.createElement("option"); opt.value = s.id; opt.textContent = s.name; studentSel.appendChild(opt);
+  function setMetaStatus(message, retry = null) {
+    document.getElementById("meta-status").textContent = message;
+    retryMeta = retry;
+    retryBtn.hidden = !retry;
+  }
+  function resetStudents(label) {
+    studentSel.replaceChildren(new Option(label, ""));
+    studentSel.disabled = true;
+  }
+  function appendOptions(select, rows) {
+    rows.forEach(row=>{const option=new Option(row.name,row.id);
+      if(row.legalName !== undefined)option.dataset.legalName=row.legalName;
+      select.add(option);
     });
   }
-
-  function setSyncStatusText(savedAt) {
-    const el = document.getElementById("sync-status");
-    if (!savedAt) {
-      el.textContent = "클래스·학생 명단이 아직 동기화되지 않았습니다. [🔄 명단 동기화]를 먼저 눌러주세요.";
+  async function loadClasses(initialClasses) {
+    const requestId = ++metaRequestId;
+    classSel.disabled = true;
+    classSel.replaceChildren(new Option("클래스 불러오는 중…", ""));
+    resetStudents("클래스를 먼저 선택하세요");
+    metaLoading=true;metaUnavailable=false;refreshQueryUI();
+    setMetaStatus("클래스 불러오는 중…");
+    try {
+      const classes = initialClasses || (await callFn({ action: "classes" })).classes;
+      if (requestId !== metaRequestId) return;
+      if (!Array.isArray(classes)) throw new Error("클래스 목록을 확인할 수 없습니다.");
+      classSel.replaceChildren(new Option("전체 클래스", ""));
+      appendOptions(classSel, classes);
+      classSel.disabled = false;
+      metaLoading=false;metaUnavailable=false;refreshQueryUI();
+      setMetaStatus(`클래스 ${classes.length}개 · 반을 선택하면 해당 반 학생을 불러옵니다.`);
+    } catch (err) {
+      if (requestId !== metaRequestId) return;
+      metaLoading=false;metaUnavailable=true;refreshQueryUI();
+      classSel.replaceChildren(new Option("클래스 로딩 실패", ""));
+      setMetaStatus("클래스 로딩 실패: " + err.message, () => loadClasses());
+    }
+  }
+  async function loadClassStudents() {
+    const requestId = ++metaRequestId;
+    const classId = classSel.value;
+    metaLoading=!!classId;metaUnavailable=false;refreshQueryUI();
+    resetStudents(classId ? "학생 불러오는 중…" : "클래스를 먼저 선택하세요");
+    if (!classId) {
+      metaLoading=false;refreshQueryUI();
+      setMetaStatus("전체 클래스 조회가 가능합니다. 반을 선택하면 해당 반 학생을 불러옵니다.");
       return;
     }
-    el.textContent = `마지막 동기화: ${new Date(savedAt).toLocaleString("ko-KR")} (클래스·학생 명단이 바뀌었으면 다시 동기화하세요)`;
-  }
-
-  function loadMetaFromCache() {
+    refreshQueryUI();
+    setMetaStatus("해당 반 학생 불러오는 중…");
     try {
-      const cached = JSON.parse(localStorage.getItem(META_CACHE_KEY) || "null");
-      if (cached && cached.meta) {
-        fillMetaSelects(cached.meta);
-        setSyncStatusText(cached.savedAt);
-        return;
-      }
-    } catch (err) { console.error("캐시된 명단 읽기 실패", err); }
-    setSyncStatusText(null);
-  }
-
-  async function syncMeta() {
-    const btn = document.getElementById("btn-sync");
-    btn.disabled = true; btn.textContent = "동기화 중...";
-    try {
-      const meta = await callFn({ action: "meta" });
-      const savedAt = Date.now();
-      localStorage.setItem(META_CACHE_KEY, JSON.stringify({ meta, savedAt }));
-      fillMetaSelects(meta);
-      setSyncStatusText(savedAt);
+      const data = await callFn({ action: "students", classId });
+      if (requestId !== metaRequestId || classSel.value !== classId) return;
+      if (!Array.isArray(data.students)) throw new Error("학생 목록을 확인할 수 없습니다.");
+      studentSel.replaceChildren(new Option("전체 학생", ""));
+      appendOptions(studentSel, data.students);
+      studentSel.disabled = data.students.length === 0;
+      metaLoading=false;metaUnavailable=false;refreshQueryUI();
+      setMetaStatus(data.students.length ? `해당 반 학생 ${data.students.length}명` : "해당 반에 등록된 학생이 없습니다.");
     } catch (err) {
-      document.getElementById("sync-status").textContent = "동기화 실패: " + err.message;
-    } finally {
-      btn.disabled = false; btn.textContent = "🔄 명단 동기화";
+      if (requestId !== metaRequestId || classSel.value !== classId) return;
+      metaLoading=false;metaUnavailable=true;refreshQueryUI();
+      resetStudents("학생 로딩 실패");
+      setMetaStatus("학생 로딩 실패: " + err.message, loadClassStudents);
     }
   }
-  document.getElementById("btn-sync").addEventListener("click", syncMeta);
+  classSel.addEventListener("change", loadClassStudents);
+  retryBtn.addEventListener("click", () => { if (retryMeta) retryMeta(); });
 
   function esc(s) { return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
   function won(n) { return (n || 0).toLocaleString("ko-KR") + "원"; }
 
-  function renderAttendance(data) {
-    const days = data.dateList.map((d) => d.slice(8, 10));
-    let html = `<h2>수강생 출석부</h2><div class="doc-sub">${esc(data.periodStart)} ~ ${esc(data.periodEnd)}</div>`;
-    html += `<table class="doc-table"><thead><tr><th class="name-cell">클래스</th><th class="name-cell">성명</th>`;
-    days.forEach((d) => (html += `<th>${d}</th>`));
-    html += `</tr></thead><tbody>`;
-    data.students.forEach((s) => {
-      html += `<tr><td class="name-cell">${esc(s.className)}</td><td class="name-cell">${esc(s.studentName)}</td>`;
-      data.dateList.forEach((d) => (html += `<td>${esc(s.days[d] || "")}</td>`));
-      html += `</tr>`;
+  function warningsHtml(data) {
+    return data.warnings?.length ? `<div class="warnings"><b>출력 전 확인 — 미완성 자료를 확정 서류로 사용하지 마세요.</b><ul>${data.warnings.map(v=>`<li>${esc(v)}</li>`).join("")}</ul></div>` : "";
+  }
+  function field(value) { return value === null || value === undefined || value === "" ? "미입력" : esc(value); }
+  function money(value) { return value === null || value === undefined ? "미확인" : won(value); }
+  function billingText(r) { return r.billingStart ? `${r.billingStart} ~ ${r.billingEnd || r.billingStart}` : "미입력"; }
+  const ATTENDANCE_NOTE="○ 출석 · × 결석 · △ 보강 · · 예정/미체크 · 공란: 수업 기록 없음. 등록별 별도 행, 복수 수업은 시간순 / 구분. 등하원 체크를 수업 출석으로 대체하지 않습니다.";
+  function attendanceGroups(data) {
+    const groups=new Map();
+    (data.students || []).forEach(r=>{
+      // Actual class identity, not the reported label: distinct classes may share a legal course name.
+      const key=r.classId || JSON.stringify([r.className || "",r.subject || ""]);
+      if(!groups.has(key))groups.set(key,{classId:r.classId,className:r.className,subject:r.subject,rows:[]});
+      groups.get(key).rows.push(r);
     });
-    html += `</tbody></table><div class="legend">○ 출석 · × 결석 · △ 보강 (교습기간 3개월 이상 수강생 대상, 학원법 시행규칙 별표2 — 3년간 보관)</div>`;
+    return [...groups.values()];
+  }
+  function attendanceGroupTitle(group) {
+    return `수강생 출석부(${group.className || "신고 반명 미입력"}, ${group.subject || "교습과목 미입력"})`;
+  }
+  function attendanceSubtitle(snapshot) {
+    return snapshot.query.studentId ? `선택 학생: ${snapshot.targetLabel || "학생 이름 미입력"}` : "";
+  }
+  function renderAttendance(data, snapshot) {
+    let html=warningsHtml(data);
+    const groups=attendanceGroups(data);
+    if(!groups.length)return `<h2>${esc(documentTitle(snapshot))}</h2><div class="doc-sub">${esc(data.periodStart)} ~ ${esc(data.periodEnd)}</div>${html}<p class="doc-sub">조회 결과가 없습니다.</p>`;
+    groups.forEach(g=>{
+      html+=`<section class="attendance-class"><h2>${esc(attendanceGroupTitle(g))}</h2><div class="doc-sub">${esc(data.periodStart)} ~ ${esc(data.periodEnd)}${snapshot.query.studentId ? "<br>"+esc(attendanceSubtitle(snapshot)) : ""}</div>`;
+      html+=`<table class="doc-table attendance-table" style="--day-count:${data.dateList.length}"><colgroup><col><col span="${data.dateList.length}"></colgroup><thead><tr><th>성명</th>`;
+      data.dateList.forEach(d=>html+=`<th>${esc(d.slice(5))}</th>`);
+      html+=`</tr></thead><tbody>`;
+      g.rows.forEach(r=>{html+=`<tr><td class="name-cell">${field(r.studentName)}</td>`;data.dateList.forEach(d=>html+=`<td>${esc(r.days[d] || "")}</td>`);html+=`</tr>`;});
+      html+=`</tbody></table><div class="legend">${esc(ATTENDANCE_NOTE)}</div></section>`;
+    });
     return html;
   }
-
-  function renderStudentRegister(data) {
-    let html = `<h2>수강생 대장</h2><div class="doc-sub">별지 제25호서식 준용 (3년간 보관)</div>`;
-    html += `<table class="doc-table"><thead><tr><th>클래스</th><th>성명</th><th>생년월일</th><th>성별</th><th>학생 연락처</th><th>보호자 연락처</th><th>등록일</th><th>종료일</th></tr></thead><tbody>`;
-    data.rows.forEach((r) => {
-      html += `<tr><td>${esc(r.className)}</td><td class="name-cell">${esc(r.studentName)}</td><td>${esc(r.birthDate)}</td><td>${esc(r.gender)}</td><td>${esc(r.studentPhone)}</td><td>${esc(r.parentPhone)}</td><td>${esc(r.enrollDate)}</td><td>${esc(r.endDate)}</td></tr>`;
+  const REGISTER_COLUMN_RATIOS = [8, 12, 38, 16, 13, 13];
+  function registerGroups(data) {
+    if(data.groups) return data.groups;
+    const groups=new Map();
+    data.rows.forEach(r=>{const key=r.classId || r.className;if(!groups.has(key))groups.set(key,{className:r.className,subject:r.subject,rows:[]});groups.get(key).rows.push(r);});
+    return [...groups.values()];
+  }
+  function renderStudentRegister(data, title) {
+    let html=warningsHtml(data);
+    if(!registerGroups(data).length)html+=`<h2>${esc(title)}</h2><div class="doc-sub">별지 제25호서식 항목 기준 · 3년 보관</div>`;
+    registerGroups(data).forEach(g=>{
+      html+=`<section class="class-register"><h2>${esc(title)}</h2><div class="doc-sub">별지 제25호서식 항목 기준 · 3년 보관</div><h3>반명: ${field(g.className)} &nbsp; 교습과목: ${field(g.subject)}</h3><table class="doc-table register-table"><colgroup>${REGISTER_COLUMN_RATIOS.map(width=>`<col style="width:${width}%">`).join("")}</colgroup><thead><tr><th>등록번호</th><th>성명</th><th>주소</th><th>전화번호</th><th>입원 연월일</th><th>퇴원 연월일</th></tr></thead><tbody>`;
+      g.rows.forEach(r=>html+=`<tr><td>${field(r.registrationNo)}</td><td>${field(r.studentName)}</td><td>${field(r.address)}</td><td>${field(r.phone)}</td><td>${field(r.enrollDate)}</td><td>${esc(r.endDate)}</td></tr>`);
+      html+=`</tbody></table><div class="legend">전화번호: 학생 → 지정 우선 연락처 → 다른 등록 연락처(어머니·아버지·기타 보호자 순) → 누락 안내. 입원/퇴원 날짜는 등록 건의 등록일/종료일 기준입니다.</div></section>`;
     });
-    html += `</tbody></table>`;
     return html;
   }
-
-  function renderReceiptLedger(data) {
-    let html = `<h2>교습비등 영수증 원부</h2><div class="doc-sub">별지 제24호서식 준용 (5년간 보관)</div>`;
-    html += `<table class="doc-table"><thead><tr><th>일련번호</th><th>납부일자</th><th>납부자(성명)</th><th>등록번호</th><th>생년월일</th><th>교습과목</th><th>교습비</th><th>기타경비</th><th>비고</th></tr></thead><tbody>`;
-    let total = 0;
-    data.rows.forEach((r) => {
-      total += r.amount;
-      html += `<tr><td>${r.serialNo}</td><td>${esc(r.paymentDate)}</td><td class="name-cell">${esc(r.payerName)}</td><td>${esc(r.registrationNo)}</td><td>${esc(r.birthDate)}</td><td>${esc(r.subject)}</td><td>${won(r.amount)}</td><td>${won(r.etcExpense)}</td><td>${esc(r.note)}</td></tr>`;
+  function receiptDateParts(value) {
+    const match=/^(\d{4})-(\d{2})-(\d{2})$/.exec(value || "");
+    return match ? match.slice(1).map(Number) : ["","",""];
+  }
+  function receiptCopy(r, title) {
+    return `<div class="receipt-copy"><div class="receipt-context screen-only">교습기간: ${esc(billingText(r))}<br>신고 교습과정: ${field(r.className)}</div><h3>${esc(title)}</h3>
+      <table class="doc-table receipt-official"><colgroup>${Array.from({length:5},()=>'<col style="width:20%">').join("")}</colgroup><tbody>
+      <tr class="receipt-top"><td colspan="3">일련번호: ${field(r.serialNo)}</td><td colspan="2">연월(분기): ${field(r.billingMonth)}</td></tr>
+      <tr class="payer-row"><th rowspan="2">납부자</th><td colspan="2" class="receipt-data">등록(신고)번호:<span class="receipt-value">${field(r.registrationNo)}</span></td><td colspan="2" class="receipt-data">성명:<span class="receipt-value">${field(r.payerName)}</span></td></tr>
+      <tr class="payer-row"><td colspan="2" class="receipt-data">생년월일:<span class="receipt-value">${field(r.birthDate)}</span></td><td colspan="2" class="receipt-data">교습과목:<span class="receipt-value">${field(r.subject)}</span></td></tr>
+      <tr><th rowspan="3">납부<br>명세</th><td rowspan="2">교습비</td><td colspan="3">기타경비</td></tr>
+      <tr class="expense-labels"><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+      <tr class="payment-row"><td>${money(r.amount)}</td><td>${money(r.etcExpense)}</td><td></td><td></td></tr>
+      <tr><td colspan="5" class="receipt-footer-cell"><div class="receipt-footer-inner"><div class="receipt-confirm">위와 같이 영수하였음을 증명합니다.</div><div class="receipt-footer-note">※ 본 서식 외 교육감이 지정한 영수증을 사용할 수 있습니다.</div><div class="receipt-date">${receiptDateParts(r.paymentDate).map((v,i)=>`<span>${esc(v)}${["년","월","일"][i]}</span>`).join("")}</div><div class="receipt-footer-bottom"><div class="receipt-issuer">학원설립·운영자, 교습자<br>또는 개인과외교습자</div><div class="receipt-signature">__________________<br>(서명 또는 인)</div></div></div></td></tr>
+      </tbody></table></div>`;
+  }
+  function renderReceiptLedger(data, layout="list", snapshot) {
+    let html=`<h2>${esc(documentTitle(snapshot))}</h2><div class="doc-sub">별지 제24호서식 항목 기반 초안 · 원부 5년 보관</div>`+warningsHtml(data);
+    if(layout==="form" && !data.rows.length)return `<h2>${esc(documentTitle(snapshot))}</h2><div class="doc-sub">조회 결과가 없습니다.</div>`;
+    if(layout==="form") return `<div class="receipt-form-heading screen-only"><h2>${esc(documentTitle(snapshot))}</h2><div class="doc-sub">원부·영수증 서식 미리보기 — 확정 발급 전 금액·환불·취소·서명을 확인하세요.</div></div><div class="receipt-sets">`+data.rows.map(r=>`<section class="receipt-page"><div class="receipt-pair">${receiptCopy(r,"교습비등 영수증 원부")}${receiptCopy(r,"교습비등 영수증")}</div></section>`).join("")+`</div>`;
+    const groups=new Map();
+    data.rows.forEach(r=>{const key=r.classId || JSON.stringify([r.className || "",r.subject || ""]);
+      if(!groups.has(key))groups.set(key,{className:r.className,subject:r.subject,rows:[]});groups.get(key).rows.push(r);
     });
-    html += `</tbody></table><div class="legend">합계: ${won(total)}</div><div class="sign-line">위와 같이 교습비등을 받았음을 확인함. &nbsp;&nbsp;&nbsp; 원장 (서명 또는 인)</div>`;
-    return html;
+    // Repeat the existing document title and class context at the start of every printed class.
+    html=warningsHtml(data);
+    if(!groups.size)return html+`<h2>${esc(documentTitle(snapshot))}</h2><div class="doc-sub">조회 결과가 없습니다.</div>`;
+    groups.forEach(g=>{
+      html+=`<section class="class-receipt-list"><h2>${esc(documentTitle(snapshot))}</h2><div class="doc-sub">별지 제24호서식 항목 기반 초안 · 원부 5년 보관</div><h3>반명: ${field(g.className)} &nbsp; 교습과목: ${field(g.subject)}</h3>`;
+    html+=`<table class="doc-table"><thead><tr><th>일련번호</th><th>납부일자</th><th>납부자(성명)</th><th>등록번호</th><th>생년월일</th><th>교습과목</th><th>신고 교습과정</th><th>교습기간</th><th>교습비</th><th>기타경비</th><th>결제금액</th><th>비고</th></tr></thead><tbody>`;
+    g.rows.forEach(r=>html+=`<tr><td>${field(r.serialNo)}</td><td>${esc(r.paymentDate)}</td><td class="name-cell">${field(r.payerName)}</td><td>${field(r.registrationNo)}</td><td>${esc(r.birthDate)}</td><td>${field(r.subject)}</td><td>${field(r.className)}</td><td>${esc(billingText(r))}</td><td>${money(r.amount)}</td><td>${money(r.etcExpense)}</td><td>${money(r.paidAmount)}</td><td class="note-cell">${esc(r.note)}</td></tr>`);
+      html+=`</tbody></table><div class="legend">반별 결제금액 합계: ${won(g.rows.reduce((sum,r)=>sum+(r.paidAmount ?? 0),0))}<span class="screen-only">교습비는 청구금액, 기타경비는 출력용 기본값 0원입니다. 필요 시 엑셀에서 직접 수정하고 실제 수납액과 대조하세요.</span></div></section>`;
+    });
+    return html+`<div class="legend">조회 전체 결제금액 합계: ${won(data.rows.reduce((sum,r)=>sum+(r.paidAmount ?? 0),0))}</div>`;
   }
 
-  function renderCashJournal(data) {
-    let html = `<h2>현금출납부</h2><div class="doc-sub">현금 입·출금 기록 (5년간 보관)</div>`;
+  function renderCashJournal(data, title) {
+    let html = `<h2>${esc(title)}</h2><div class="doc-sub">현금 입·출금 기록 (5년간 보관)</div>`;
     html += `<table class="doc-table"><thead><tr><th>날짜</th><th>구분</th><th>내용</th><th>비고</th><th>금액</th><th>잔액</th></tr></thead><tbody>`;
     data.rows.forEach((r) => {
-      html += `<tr><td>${esc(r.date)}</td><td>${esc(r.type)}</td><td class="name-cell">${esc(r.title)}</td><td>${esc(r.note)}</td><td>${won(r.amount)}</td><td>${won(r.balance)}</td></tr>`;
+      html += `<tr><td>${esc(r.date)}</td><td>${esc(r.type)}</td><td class="name-cell">${esc(r.title)}</td><td class="note-cell">${esc(r.note)}</td><td>${won(r.amount)}</td><td>${won(r.balance)}</td></tr>`;
     });
     html += `</tbody></table>`;
     return html;
   }
 
-  document.getElementById("btn-query").addEventListener("click", async () => {
-    const statusEl = document.getElementById("doc-status");
-    const printArea = document.getElementById("print-area");
-    statusEl.textContent = "조회 중...";
-    const body = {
-      docType: currentDocType,
-      periodStart: document.getElementById("f-start").value,
-      periodEnd: document.getElementById("f-end").value,
-      classId: document.getElementById("f-class").value || undefined,
-      studentId: document.getElementById("f-student").value || undefined,
-      search: document.getElementById("f-search").value.trim() || undefined,
-    };
+  // Screen-only scroll surfaces. Formal receipt copies and all export data remain unchanged.
+  function prepareTableScrolling(area=document.getElementById("print-area")) {
+    area.querySelectorAll("table.doc-table").forEach(table=>{
+      if(table.closest(".receipt-copy") || table.parentElement.classList.contains("table-scroll"))return;
+      const wrapper=document.createElement("div");
+      wrapper.className="table-scroll";wrapper.tabIndex=0;wrapper.setAttribute("role","region");
+      wrapper.setAttribute("aria-label",table.classList.contains("attendance-table") ? "수강생 출석부 — 좌우 스크롤, 성명 고정" : "서류 표 — 좌우 스크롤");
+      wrapper.style.setProperty("--columns",table.rows[0]?.cells.length || 6);
+      table.before(wrapper);wrapper.appendChild(table);
+      const hint=document.createElement("div");hint.className="table-scroll-hint";
+      hint.textContent=table.classList.contains("attendance-table") ? "표가 화면보다 넓으면 좌우로 스크롤하세요. 성명은 왼쪽에 고정됩니다." : "표가 화면보다 넓으면 표 안에서 좌우로 스크롤하세요.";
+      wrapper.before(hint);
+    });
+  }
+
+  function captureControls() {
+    return {periodStart:document.getElementById("f-start").value,periodEnd:document.getElementById("f-end").value,classId:classSel.value,studentId:studentSel.value,search:document.getElementById("f-search").value,receiptLayout:document.getElementById("receipt-layout").value,
+      studentOptions:[...studentSel.options].map(o=>({id:o.value,name:o.textContent})),studentDisabled:studentSel.disabled,metaStatus:document.getElementById("meta-status").textContent,metaLoading,metaUnavailable,retryMeta};
+  }
+  function getTabState(type=currentDocType) {
+    if(!tabStates.has(type)){
+      const area=document.getElementById("print-area");if(!area.querySelector(".doc-pane"))area.replaceChildren();
+      const pane=document.createElement("div");pane.className="doc-pane";pane.dataset.docType=type;pane.hidden=type!==currentDocType;
+      pane.innerHTML='<p class="empty-note">기간과 조건을 선택한 뒤 [조회]를 눌러주세요.</p>';area.appendChild(pane);
+      tabStates.set(type,{type,pane,filters:captureControls(),document:null,status:"",loading:false,requestId:0,controllers:[]});
+    }
+    return tabStates.get(type);
+  }
+  function saveCurrentTab(){getTabState().filters=captureControls();}
+  function restoreTabControls(state){
+    const f=state.filters;
+    document.getElementById("f-start").value=f.periodStart;document.getElementById("f-end").value=f.periodEnd;
+    classSel.value=f.classId;studentSel.replaceChildren();appendOptions(studentSel,f.studentOptions);studentSel.value=f.studentId;studentSel.disabled=f.studentDisabled;
+    document.getElementById("f-search").value=f.search;document.getElementById("receipt-layout").value=f.receiptLayout;
+    metaLoading=f.metaLoading;metaUnavailable=f.metaUnavailable;setMetaStatus(f.metaStatus,f.retryMeta);
+  }
+  // 화면 위 알림 줄(docs/DESIGN.md): info 평소·진행 / success 조회 완료 / warn 조회했지만 확인 사항 있음 / error 실패
+  function showDocStatus(text,kind="info"){const el=document.getElementById("doc-status");el.textContent=text;["info","success","error"].forEach(k=>el.classList.toggle(k,k===kind));}
+  function refreshQueryUI(){
+    const state=tabStates.get(currentDocType),busy=!!state?.loading;
+    queryBtn.disabled=busy || metaLoading || metaUnavailable || classSel.disabled;
+    queryBtn.setAttribute("aria-busy",String(busy));
+    queryBtn.classList.toggle("loading",busy);
+    if(busy)showDocStatus("조회 중…");else if(state?.exporting)showDocStatus("엑셀 파일을 만드는 중…");else if(state?.status)showDocStatus(state.status,state.statusKind);else showDocStatus("서류 종류와 기간을 고른 뒤 [조회]를 누르세요.");
+    document.getElementById("btn-excel").disabled=busy || !!state?.exporting || !state?.document;
+    document.getElementById("btn-excel").classList.toggle("loading",!!state?.exporting);document.getElementById("btn-excel").setAttribute("aria-busy",String(!!state?.exporting));
+    state?.pane.setAttribute("aria-busy",String(busy));
+    document.getElementById("btn-print").disabled=busy || !state?.document;
+  }
+  function showCurrentTab(){
+    const state=getTabState();tabStates.forEach(s=>s.pane.hidden=s!==state);loadedDocument=state.document;
+    document.getElementById("receipt-layout-field").hidden=currentDocType!=="receipt-ledger";
+    const warningArea=document.getElementById("document-warnings");
+    warningArea.innerHTML=state.document ? warningsHtml(state.document.data) : "";warningArea.hidden=!warningArea.children.length;
+    refreshQueryUI();
+  }
+  function documentHtml(snapshot){
+    const {data,query}=snapshot;
+    if(query.docType==="attendance")return renderAttendance(data,snapshot);
+    if(query.docType==="student-register")return renderStudentRegister(data,documentTitle(snapshot));
+    if(query.docType==="receipt-ledger")return renderReceiptLedger(data,query.receiptLayout,snapshot);
+    return renderCashJournal(data,documentTitle(snapshot));
+  }
+  function renderTabDocument(state,snapshot=state.document){
+    const draft=document.createElement("div");draft.innerHTML=documentHtml(snapshot);
+    draft.querySelectorAll(".warnings").forEach(e=>e.remove());
+    prepareTableScrolling(draft);const controllers=setupColumnTools(draft);
+    if(state.type===currentDocType)closeColumnMenu();
+    state.pane.replaceChildren(...draft.childNodes);state.controllers=controllers;
+  }
+  document.getElementById("btn-query").addEventListener("click",async()=>{
+    const state=getTabState();if(state.loading || metaLoading || metaUnavailable || classSel.disabled)return;
+    state.filters=captureControls();state.loading=true;const requestId=++docRequestId;state.requestId=requestId;const generation=authGeneration;refreshQueryUI();
+    const f=state.filters;
+    const body={docType:state.type,receiptLayout:f.receiptLayout,periodStart:f.periodStart,periodEnd:f.periodEnd,classId:f.classId || undefined,studentId:f.studentId || undefined,search:f.search.trim() || undefined};
+    const targetLabel=body.studentId ? studentSel.selectedOptions[0]?.textContent || "학생" : body.classId ? classSel.selectedOptions[0]?.textContent || "클래스" : "전체";
+    const selectedLegalName=classSel.selectedOptions[0]?.dataset.legalName;
+    const filterLabel=`클래스: ${classSel.selectedOptions[0]?.textContent || "전체"} · 학생: ${body.studentId ? targetLabel : "전체 학생"}${body.search ? " · 검색: "+body.search : ""}`;
+    try{
+      const data=await callFn(body);
+      if(generation!==authGeneration || state.requestId!==requestId || tabStates.get(state.type)!==state)return;
+      const legalNames=[...new Set((data.students || data.rows || []).map(r=>r.className).filter(Boolean))];
+      const legalFilterLabel=`신고 교습과정: ${legalNames.join(", ") || "미입력"} · ${body.studentId ? targetLabel : "전체 학생"}${body.search ? " · 검색: "+body.search : ""}`;
+      const snapshot={data,query:{...body},filterLabel:body.docType==="cash-journal" ? filterLabel : legalFilterLabel,targetLabel,selectedLegalName:selectedLegalName ?? legalNames.join(", ")};
+      renderTabDocument(state,snapshot);state.document=snapshot;
+      const count=(data.students || data.rows || []).length;
+      state.status=`조회 완료 · ${count}건${data.warnings?.length ? " · 출력 전 확인 사항 "+data.warnings.length+"개" : ""}`;state.statusKind=data.warnings?.length ? "warn" : "success";
+    }catch(err){
+      if(generation!==authGeneration || state.requestId!==requestId || tabStates.get(state.type)!==state)return;
+      state.status="조회 실패: "+err.message+(state.document ? " · 이전 조회 결과 유지" : "");state.statusKind="error";
+    }finally{
+      if(generation===authGeneration && state.requestId===requestId && tabStates.get(state.type)===state){state.loading=false;if(currentDocType===state.type)showCurrentTab();}
+    }
+  });
+  document.getElementById("receipt-layout").addEventListener("change",()=>{
+    const state=getTabState();state.filters.receiptLayout=document.getElementById("receipt-layout").value;
+    if(state.document?.query.docType!=="receipt-ledger")return;
+    state.document.query.receiptLayout=state.filters.receiptLayout;renderTabDocument(state);showCurrentTab();
+  });
+
+  // Header controls change DOM rows only. The queried snapshot used by exports stays immutable.
+  const collator=new Intl.Collator("ko",{numeric:true,sensitivity:"base"});
+  let openMenuButton=null;
+  const menu=document.getElementById("column-menu");
+  function closeColumnMenu(){menu.hidden=true;openMenuButton?.setAttribute("aria-expanded","false");openMenuButton=null;}
+  function compareValues(a,b){
+    const blank=v=>v==="" || v==="미입력" || v==="미확인";
+    if(blank(a)||blank(b))return blank(a)===blank(b)?0:blank(a)?1:-1;
+    const parse=v=>/^-?[\d,]+(?:\.\d+)?(?:원)?$/.test(v) ? Number(v.replace(/[,원]/g,"")) : NaN;
+    const x=parse(a),y=parse(b);return Number.isFinite(x)&&Number.isFinite(y)?x-y:collator.compare(a,b);
+  }
+  function applyColumnView(c){
+    let rows=[...c.rows];
+    if(c.sort)rows.sort((a,b)=>{const x=a.values[c.sort.col],y=b.values[c.sort.col],empty=v=>v===""||v==="미입력"||v==="미확인";const cmp=compareValues(x,y);return (empty(x)||empty(y)?cmp:cmp*(c.sort.direction==="ascending"?1:-1)) || a.index-b.index;});
+    let visible=0;
+    for(const entry of rows){
+      const show=[...c.filters.entries()].every(([col,f])=>entry.values[col].toLocaleLowerCase().includes(f.search.toLocaleLowerCase()));
+      entry.row.hidden=!show;if(show)visible++;c.table.tBodies[0].appendChild(entry.row);
+    }
+    c.headers.forEach((th,col)=>{const sort=c.sort?.col===col ? c.sort.direction : "none";th.setAttribute("aria-sort",sort);const active=c.filters.has(col);const action=th.querySelector(".column-action");action.innerHTML=columnIcon(sort);action.classList.toggle("filtered",active);});
+    c.count.textContent=`화면 ${visible}/${c.rows.length}행 · 정렬·필터는 화면 확인용`;
+  }
+  // 표 머리 정렬·필터 버튼 아이콘(Feather): 기본 chevron-down, 오름차순 arrow-up, 내림차순 arrow-down.
+  // 검색으로 걸러진 열은 아이콘을 더 붙이지 않고 버튼 바탕색(.filtered)으로 표시한다.
+  const COLUMN_ICONS={none:'<polyline points="6 9 12 15 18 9"></polyline>',ascending:'<line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline>',descending:'<line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline>'};
+  function columnIcon(sort){return `<svg class="line" viewBox="0 0 24 24" aria-hidden="true">${COLUMN_ICONS[sort] || COLUMN_ICONS.none}</svg>`;}
+  function setupColumnTools(pane){
+    return [...pane.querySelectorAll("table.doc-table")].filter(t=>t.tHead && t.tBodies.length).map(table=>{
+      const headers=[...table.tHead.rows[0].cells];const c={table,headers,rows:[...table.tBodies[0].rows].map((row,index)=>({row,index,values:[...row.cells].map(cell=>cell.textContent.trim())})),sort:null,filters:new Map()};
+      const summary=document.createElement("div");summary.className="view-summary";c.count=document.createElement("span");summary.appendChild(c.count);
+      const reset=document.createElement("button");reset.type="button";reset.textContent="정렬·필터 초기화";reset.addEventListener("click",()=>{c.sort=null;c.filters.clear();closeColumnMenu();applyColumnView(c);});summary.appendChild(reset);table.parentElement.after(summary);
+      headers.forEach((th,col)=>{
+        const label=th.textContent.trim();th.classList.add("has-column-tools");th.setAttribute("scope","col");th.replaceChildren();const title=document.createElement("span");title.className="head-label";title.textContent=label;th.appendChild(title);
+        const button=document.createElement("button");button.type="button";button.className="column-action";button.innerHTML=columnIcon("none");button.setAttribute("aria-label",`${label} 정렬 및 필터`);button.setAttribute("aria-haspopup","dialog");button.setAttribute("aria-expanded","false");button.title=`${label} 정렬 및 필터`;button.addEventListener("click",()=>openColumnMenu(c,col,label,button));th.appendChild(button);
+      });applyColumnView(c);return c;
+    });
+  }
+  function openColumnMenu(c,col,label,button){
+    if(openMenuButton===button && !menu.hidden){closeColumnMenu();return;}
+    closeColumnMenu();openMenuButton=button;button.setAttribute("aria-expanded","true");menu.replaceChildren();menu.hidden=false;
+    menu.setAttribute("aria-label",`${label} 정렬·필터`);
+    // 정렬 한 버튼: 원래 순서 → 오름차순 → 내림차순 → 원래 순서. 다른 열을 정렬 중이면 이 열 오름차순부터.
+    const NEXT={none:"ascending",ascending:"descending",descending:"none"},LABEL={none:"정렬",ascending:"오름차순",descending:"내림차순"};
+    const sortBtn=document.createElement("button");sortBtn.type="button";sortBtn.className="sort-toggle";
+    const paintSort=()=>{const now=c.sort?.col===col ? c.sort.direction : "none";sortBtn.innerHTML=columnIcon(now);sortBtn.append(LABEL[now]);sortBtn.setAttribute("aria-pressed",String(now!=="none"));sortBtn.title=`${label}: 누를 때마다 오름차순 → 내림차순 → 원래 순서`;};
+    sortBtn.addEventListener("click",()=>{const next=NEXT[c.sort?.col===col ? c.sort.direction : "none"];c.sort=next==="none" ? null : {col,direction:next};applyColumnView(c);paintSort();});paintSort();
+    const search=document.createElement("input");search.type="search";search.value=c.filters.get(col)?.search || "";search.placeholder=`${label} 검색`;search.setAttribute("aria-label",`${label} 검색`);
+    search.addEventListener("input",()=>{if(search.value)c.filters.set(col,{search:search.value});else c.filters.delete(col);applyColumnView(c);});
+    search.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();closeColumnMenu();button.focus();}});
+    menu.append(sortBtn,search);
+    const rect=button.getBoundingClientRect();const width=menu.getBoundingClientRect().width,height=menu.getBoundingClientRect().height;
+    menu.style.left=Math.max(8,Math.min(rect.left,innerWidth-width-8))+"px";menu.style.top=Math.max(8,Math.min(rect.bottom+6,innerHeight-height-8))+"px";search.focus();
+  }
+  document.addEventListener("pointerdown",e=>{if(!menu.hidden && !menu.contains(e.target) && !e.target.closest(".column-action"))closeColumnMenu();});
+  document.addEventListener("keydown",e=>{if(e.key==="Escape" && !menu.hidden){const b=openMenuButton;closeColumnMenu();b?.focus();}});
+  window.addEventListener("resize",closeColumnMenu);window.addEventListener("scroll",e=>{if(!menu.contains(e.target))closeColumnMenu();},true);
+  let originalPrintTitle=null;
+  window.addEventListener("beforeprint",()=>{
+    if(loadedDocument){if(originalPrintTitle===null)originalPrintTitle=document.title;document.title=excelFilenameStem(loadedDocument,DOCUMENT_TITLES[loadedDocument.query.docType]);}
+    closeColumnMenu();
+    for(const c of tabStates.get(currentDocType)?.controllers || [])for(const entry of c.rows){entry.row.hidden=false;c.table.tBodies[0].appendChild(entry.row);}
+  });
+  window.addEventListener("afterprint",()=>{if(originalPrintTitle!==null){document.title=originalPrintTitle;originalPrintTitle=null;}for(const c of tabStates.get(currentDocType)?.controllers || [])applyColumnView(c);});
+  document.getElementById("btn-print").addEventListener("click",()=>{if(loadedDocument && !getTabState().loading)window.print();});
+
+  // 라이브러리를 같은 저장소에서 필요할 때만 읽는다. 조회 데이터는 외부로 전송하지 않는다.
+  let excelLibraryPromise;
+  function loadExcelLibrary() {
+    if (window.ExcelJS) return Promise.resolve(window.ExcelJS);
+    if (!excelLibraryPromise) {
+      excelLibraryPromise = new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = "vendor/exceljs-4.4.0.min.js";
+        script.onload = () => window.ExcelJS ? resolve(window.ExcelJS) : reject(new Error("엑셀 라이브러리를 읽지 못했습니다."));
+        script.onerror = () => { script.remove(); reject(new Error("엑셀 라이브러리 로딩 실패. 다시 눌러주세요.")); };
+        document.head.appendChild(script);
+      }).catch((err) => { excelLibraryPromise = null; throw err; });
+    }
+    return excelLibraryPromise;
+  }
+  function excelDate(value) {
+    if (!value) return "";
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value));
+    if (!match) return String(value);
+    const date = new Date(Date.UTC(+match[1], +match[2] - 1, +match[3]));
+    return date.toISOString().slice(0, 10) === value ? date : String(value);
+  }
+  function excelNumber(value) {
+    const number = Number(value ?? 0);
+    return Number.isFinite(number) ? number : 0;
+  }
+  function excelText(value) { return String(value ?? ""); }
+
+  const DOCUMENT_TITLES={attendance:"수강생 출석부","student-register":"수강생 대장","receipt-ledger":"교습비등 영수증 원부","cash-journal":"현금출납부"};
+  function documentTitle(snapshot,base=DOCUMENT_TITLES[snapshot.query.docType]) {
+    if(!base)throw new Error("지원하지 않는 서류입니다.");
+    const target=snapshot.query.studentId ? snapshot.targetLabel || "학생 이름 미입력" : snapshot.query.classId ? snapshot.selectedLegalName || "신고 교습과정명 미입력" : "";
+    return target ? `${base}(${target})` : base;
+  }
+  function excelFilenameStem(snapshot,title) {
+    const safeTitle=documentTitle(snapshot,title).replace(/[<>:"/\\|?*\x00-\x1f]/g,"_").trim().replace(/[. ]+$/g,"");
+    return `${safeTitle}_${snapshot.query.periodStart || "전체"}_${snapshot.query.periodEnd || "전체"}`;
+  }
+
+  function optionalNumber(value) { return value === null || value === undefined || value === "" ? "" : excelNumber(value); }
+  async function buildExcelWorkbook(snapshot) {
+    const ExcelJS=await loadExcelLibrary();
+    const {data,query,filterLabel}=snapshot;
+    const wb=new ExcelJS.Workbook();wb.creator="하다 학원관리";wb.created=new Date();wb.calcProperties.fullCalcOnLoad=true;
+    const title=DOCUMENT_TITLES[query.docType];if(!title)throw new Error("지원하지 않는 서류입니다.");
+    const names=new Set();
+    function uniqueName(label){const base=String(label).replace(/[\[\]\*?:/\\]/g,"_").slice(0,25) || "미입력";let name=base,n=1;while(names.has(name))name=base.slice(0,25)+"_"+(++n);names.add(name);return name;}
+    function tableSheet(label,heading,headers,widths,rows,{dates=[],money=[],freeze=0,note="",subtitle=filterLabel,warning=data.warnings || [],alignments=null,autoHeight=false,exactHeading=false}={}){
+      const ws=wb.addWorksheet(uniqueName(label),{views:[{state:"frozen",ySplit:5,xSplit:freeze,showGridLines:false}],pageSetup:{paperSize:9,orientation:"landscape",fitToPage:true,fitToWidth:1,fitToHeight:0,printTitlesRow:"1:5",horizontalCentered:true,margins:{left:0.25,right:0.25,top:0.4,bottom:0.4,header:0.2,footer:0.2}}});
+      ws.columns=widths.map(width=>({width}));const count=headers.length,lastCol=ws.getColumn(count).letter;
+      for(const r of [1,2,3])ws.mergeCells(r,1,r,count);
+      ws.getCell("A1").value=exactHeading ? heading : documentTitle(snapshot,heading);ws.getCell("A1").numFmt="@";ws.getCell("A1").font={name:"Malgun Gothic",size:18,bold:true};ws.getCell("A1").alignment={horizontal:"center",vertical:"middle",wrapText:true};
+      const titleUnits=Array.from(String(ws.getCell("A1").value)).reduce((n,c)=>n+(/[^\x00-\x7f]/.test(c)?2:1),0);
+      const titleLines=Math.max(1,Math.ceil(titleUnits*(18/11)/Math.max(1,widths.reduce((n,w)=>n+w,0)-4)));
+      ws.getRow(1).height=titleLines===1 ? 32 : Math.min(409,titleLines*28+8);
+      ws.getCell("A2").value=`조회기간: ${query.periodStart} ~ ${query.periodEnd}`;ws.getRow(2).height=24;
+      ws.getCell("A3").value=subtitle;ws.getRow(3).height=32;
+      for(const r of [2,3]){ws.getCell(r,1).font={name:"Malgun Gothic",size:10,color:{argb:"FF666666"}};ws.getCell(r,1).alignment={wrapText:true,vertical:"middle"};}
+      ws.getRow(5).values=headers;ws.getRow(5).height=34;
+      ws.getRow(5).eachCell(c=>{c.font={name:"Malgun Gothic",size:10,bold:true};c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FFE5F2FC"}};c.alignment={horizontal:"center",vertical:"middle",wrapText:true};c.border={bottom:{style:"thin",color:{argb:"FF999999"}}};});
+      rows.forEach((values,i)=>{const r=ws.getRow(i+6);r.values=values;r.height=32;r.eachCell({includeEmpty:true},(c,j)=>{c.font={name:"Malgun Gothic",size:10};c.alignment={vertical:"middle",wrapText:true,horizontal:alignments?.[j-1] || "center"};c.border={bottom:{style:"hair",color:{argb:"FFDDDDDD"}}};if(typeof c.value==="number")c.numFmt="0";if(dates.includes(j))c.numFmt="yyyy-mm-dd";if(money.includes(j))c.numFmt='#,##0"원"';if(typeof c.value==="string")c.numFmt="@";if(query.docType==="attendance"&&freeze===1&&j>1)c.alignment.horizontal="center";});
+        if(autoHeight){
+          const lineCount=Math.max(1,...values.map((value,j)=>{
+            if(typeof value!=="string")return 1;
+            // Conservative character-width estimate; Korean address text needs more than one Latin character unit.
+            return value.split(/\r?\n/).reduce((sum,line)=>sum+Math.max(1,Math.ceil(Array.from(line).reduce((units,c)=>units+(/[^\x00-\x7f]/.test(c)?2:1),0)/Math.max(1,widths[j]-2))),0);
+          }));
+          r.height=Math.min(409,Math.max(32,lineCount*16+12));
+        }
+      });
+      if(rows.length)ws.autoFilter=`A5:${lastCol}${rows.length+5}`;
+      let last=rows.length+7;
+      if(note){ws.mergeCells(last,1,last,count);ws.getCell(last,1).value=note;ws.getCell(last,1).alignment={wrapText:true,vertical:"middle"};ws.getCell(last,1).font={name:"Malgun Gothic",size:10,color:{argb:"FF666666"}};ws.getRow(last).height=44;last+=2;}
+      if(warning.length){ws.mergeCells(last,1,last,count);ws.getCell(last,1).value="출력 전 확인: "+warning.join("\n");ws.getCell(last,1).font={name:"Malgun Gothic",size:10,color:{argb:"FF9C5700"}};ws.getCell(last,1).alignment={wrapText:true,vertical:"top"};ws.getRow(last).height=Math.min(400,28+warning.length*32);}
+      ws.pageSetup.printArea=`A1:${lastCol}${last}`;
+      return ws;
+    }
+    if(query.docType==="attendance"){
+      const groups=attendanceGroups(data);
+      (groups.length ? groups : [{className:snapshot.query.classId ? snapshot.selectedLegalName : "조회 결과 없음",subject:"",rows:[]}]).forEach(g=>{
+        const ws=tableSheet(g.className || "신고명 미입력",groups.length ? attendanceGroupTitle(g) : documentTitle(snapshot),["성명",...data.dateList],[14,...data.dateList.map(()=>8)],g.rows.map(r=>[excelText(r.studentName),...data.dateList.map(d=>excelText(r.days[d] || ""))]),{freeze:1,exactHeading:true,subtitle:attendanceSubtitle(snapshot) || "등록별 별도 행",note:ATTENDANCE_NOTE});
+        data.dateList.forEach((d,i)=>{ws.getCell(5,i+2).value=excelDate(d);ws.getCell(5,i+2).numFmt="mm-dd";});
+      });
+    }else if(query.docType==="student-register"){
+      const groups=registerGroups(data);
+      (groups.length?groups:[{className:"조회 결과 없음",subject:"",rows:[]}]).forEach(g=>tableSheet(g.className || "신고명 미입력",title,["등록번호","성명","주소","전화번호","입원 연월일","퇴원 연월일"],REGISTER_COLUMN_RATIOS.map(width=>Number((width*1.2).toFixed(1))),g.rows.map(r=>[optionalNumber(r.registrationNo),excelText(r.studentName),excelText(r.address),excelText(r.phone),excelDate(r.enrollDate),excelDate(r.endDate)]),{dates:[5,6],alignments:["center","center","left","center","center","center"],autoHeight:true,subtitle:`반명: ${g.className || "미입력"} · 교습과목: ${g.subject || "미입력"}`,note:"별지 제25호서식 항목 기준 · 3년 보관. 전화번호: 학생 → 지정 우선 연락처 → 다른 등록 연락처(어머니·아버지·기타 보호자 순) → 누락 안내."}));
+    }else if(query.docType==="receipt-ledger"){
+      const ws=tableSheet("관리용 목록",title,["일련번호","납부일자","납부자(성명)","등록번호","생년월일","교습과목","신고 교습과정","교습기간","교습비","기타경비","결제금액","비고"],[12,14,16,12,14,14,24,30,16,16,16,26],data.rows.map(r=>[optionalNumber(r.serialNo),excelDate(r.paymentDate),excelText(r.payerName),optionalNumber(r.registrationNo),excelDate(r.birthDate),excelText(r.subject),excelText(r.className),excelText(billingText(r)),optionalNumber(r.amount),optionalNumber(r.etcExpense),optionalNumber(r.paidAmount),excelText(r.note)]),{dates:[2,5],money:[9,10,11],alignments:["center","center","center","center","center","center","center","center","center","center","center","left"],note:"목록은 관리용. 원부·영수증 시트는 별지 제24호서식 항목 기반 초안. 교습비는 청구금액, 기타경비는 출력용 기본값 0원. 엑셀에서 필요한 금액을 수정하고 실제 수납액·환불·취소·발행자 서명을 확인하세요."});
+      const sumRow=data.rows.length+6;
+      ws.getCell(sumRow,10).value="결제 합계";ws.getCell(sumRow,11).value=data.rows.length?{formula:`SUM(K6:K${data.rows.length+5})`,result:data.rows.reduce((sum,r)=>sum+(r.paidAmount ?? 0),0)}:0;ws.getCell(sumRow,11).numFmt='#,##0"원"';ws.getCell(sumRow,10).alignment={horizontal:"center"};ws.getCell(sumRow,11).alignment={horizontal:"center"};
+      const forms=wb.addWorksheet(uniqueName("원부·영수증"),{views:[{showGridLines:false}],pageSetup:{paperSize:9,orientation:"portrait",fitToPage:true,fitToWidth:1,fitToHeight:0,horizontalCentered:true,margins:{left:0.3,right:0.3,top:0.4,bottom:0.4,header:0.2,footer:0.2}}});
+      forms.columns=Array.from({length:11},(_,i)=>({width:i===5?3:10}));
+      function formBox(row,col,endRow,endCol,value,{bold=false,border=true,numFmt=null,size=10,edges=null,align="center",indent=0}={}) {
+        if(row!==endRow || col!==endCol)forms.mergeCells(row,col,endRow,endCol);
+        const c=forms.getCell(row,col);c.value=value;c.font={name:"Malgun Gothic",size,bold};c.alignment={horizontal:align,wrapText:true,vertical:"middle",indent};
+        if(edges)c.border=Object.fromEntries(edges.map(side=>[side,{style:"thin",color:{argb:"FF777777"}}]));
+        else if(border)c.border=Object.fromEntries(["top","bottom","left","right"].map(side=>[side,{style:"thin",color:{argb:"FF777777"}}]));
+        if(numFmt)c.numFmt=numFmt;else if(typeof value==="string")c.numFmt="@";else if(typeof value==="number")c.numFmt="0";
+        return c;
+      }
+      data.rows.forEach((r,index)=>{
+        const base=index*15+1;
+        for(let j=0;j<15;j++)forms.getRow(base+j).height=24;
+        forms.getRow(base).height=32;forms.getRow(base+10).height=36;
+        forms.getRow(base+11).height=30;forms.getRow(base+12).height=22;forms.getRow(base+13).height=22;forms.getRow(base+14).height=12;
+        [1,7].forEach((col,half)=>{
+          const box=(offset,left,endOffset,right,value,opts)=>formBox(base+offset,col+left,base+endOffset,col+right,value,opts);
+          box(0,0,0,4,half?"교습비등 영수증":"교습비등 영수증 원부",{bold:true,border:false,size:12});
+          box(1,0,1,2,optionalNumber(r.serialNo),{numFmt:'"일련번호: "0'});
+          box(1,3,1,4,`연월(분기): ${r.billingMonth || "미입력"}`);
+          box(2,0,5,0,"납부자");
+          box(2,1,2,2,"등록(신고)번호:",{edges:["top","left","right"],align:"left"});box(3,1,3,2,optionalNumber(r.registrationNo),{edges:["bottom","left","right"]});
+          box(2,3,2,4,"성명:",{edges:["top","left","right"],align:"left"});box(3,3,3,4,excelText(r.payerName),{edges:["bottom","left","right"]});
+          box(4,1,4,2,"생년월일:",{edges:["top","left","right"],align:"left"});box(5,1,5,2,excelDate(r.birthDate),{numFmt:"yyyy-mm-dd",edges:["bottom","left","right"]});
+          box(4,3,4,4,"교습과목:",{edges:["top","left","right"],align:"left"});box(5,3,5,4,excelText(r.subject),{edges:["bottom","left","right"]});
+          box(6,0,8,0,"납부\n명세");box(6,1,7,1,"교습비");box(6,2,6,4,"기타경비");
+          for(let k=2;k<=4;k++)box(7,k,7,k,"");
+          box(8,1,8,1,optionalNumber(r.amount),{numFmt:'#,##0"원"'});
+          box(8,2,8,2,optionalNumber(r.etcExpense),{numFmt:'#,##0"원"'});
+          box(8,3,8,3,"");box(8,4,8,4,"");
+          box(9,0,9,4,"위와 같이 영수하였음을 증명합니다.",{edges:["top","left","right"]});
+          box(10,0,10,4,"※ 본 서식 외 교육감이 지정한 영수증을 사용할 수 있습니다.",{size:9,edges:["left","right"],align:"left"});
+          box(11,0,11,1,"",{edges:["left"]});
+          receiptDateParts(r.paymentDate).forEach((v,i)=>box(11,i+2,11,i+2,v,{edges:i===2?["right"]:[],numFmt:['0"년"','0"월"','0"일"'][i]}));
+          box(12,0,13,2,"학원설립·운영자, 교습자\n또는 개인과외교습자",{edges:["left","bottom"],align:"left",indent:1});
+          box(12,3,13,4,"__________________\n(서명 또는 인)",{size:9,edges:["right","bottom"],align:"right",indent:1});
+        });
+        if(index<data.rows.length-1)forms.getRow(base+14).addPageBreak();
+      });
+      if(!data.rows.length)forms.getCell("A1").value="조회 결과 없음";
+      forms.pageSetup.printArea=`A1:K${Math.max(1,data.rows.length*15)}`;
+    }else{
+      const ws=tableSheet(title,title,["날짜","구분","내용","비고","금액","잔액"],[14,10,30,30,18,18],data.rows.map(r=>[excelDate(r.date),excelText(r.type),excelText(r.title),excelText(r.note),excelNumber(r.amount),null]),{dates:[1],money:[5,6],alignments:["center","center","center","left","center","center"],note:"잔액은 조회기간 내 입·출금 기준이며 기간 이전 이월 잔액은 포함하지 않습니다."});
+      data.rows.forEach((r,i)=>{const n=i+6;ws.getCell(n,6).value={formula:`${i?"F"+(n-1):"0"}+IF(B${n}="지출",-E${n},E${n})`,result:excelNumber(r.balance)};ws.getCell(n,6).numFmt='#,##0"원"';ws.getCell(n,6).alignment={horizontal:"center",vertical:"middle"};});
+    }
+    return {workbook:wb,title};
+  }
+
+  document.getElementById("btn-excel").addEventListener("click", async () => {
+    const snapshot = loadedDocument;
+    if (!snapshot) return;
+    const btn = document.getElementById("btn-excel");
+    const exportState=tabStates.get(snapshot.query.docType),generation=authGeneration;
+    if(!exportState || exportState.exporting)return;
+    exportState.exporting=true;refreshQueryUI();
     try {
-      const data = await callFn(body);
-      let html = "";
-      if (currentDocType === "attendance") html = renderAttendance(data);
-      else if (currentDocType === "student-register") html = renderStudentRegister(data);
-      else if (currentDocType === "receipt-ledger") html = renderReceiptLedger(data);
-      else if (currentDocType === "cash-journal") html = renderCashJournal(data);
-      printArea.innerHTML = html;
-      statusEl.textContent = "조회 완료";
+      const { workbook, title } = await buildExcelWorkbook(snapshot);
+      if(generation!==authGeneration)return;
+      const buffer = await workbook.xlsx.writeBuffer();
+      if(generation!==authGeneration)return;
+      const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = excelFilenameStem(snapshot,title)+".xlsx";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (err) {
-      statusEl.textContent = "조회 실패: " + err.message;
+      const state=tabStates.get(snapshot.query.docType);if(state){state.status="엑셀 다운로드 실패: "+err.message;if(state.type===currentDocType)refreshQueryUI();}
+    } finally {
+      exportState.exporting=false;refreshQueryUI();
     }
   });
 
-  document.getElementById("btn-print").addEventListener("click", () => window.print());
-
-  document.getElementById("btn-word").addEventListener("click", () => {
-    const content = document.getElementById("print-area").innerHTML;
-    const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
-      <head><meta charset="utf-8"><style>
-        table{border-collapse:collapse;width:100%;font-size:12px} td,th{border:1px solid #999;padding:4px 6px;text-align:center}
-        h2{text-align:center} .doc-sub{text-align:center;color:#666;font-size:12px}
-      </style></head><body>${content}</body></html>`;
-    const blob = new Blob(['\ufeff', html], { type: "application/msword" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `법정서류_${currentDocType}_${document.getElementById("f-start").value}.doc`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  });
-
-  if (getAdminKey()) { showAppScreen(); } else { showLoginScreen(); }
+  if (CONFIG_ERROR) { showLoginScreen(CONFIG_ERROR); } else if (getAdminKey()) { showAppScreen(); } else { showLoginScreen(); }
 </script>
 </body>
 </html>

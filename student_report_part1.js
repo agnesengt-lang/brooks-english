@@ -4,8 +4,10 @@ let STUDENT = null
 let DATA_ERROR = null
 let REPORT_ACCESS_TOKEN = ""
 
-const SUPABASE_URL = "https://dtltoanvjgrqkmsqxhvh.supabase.co"
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR0bHRvYW52amdycWttc3F4aHZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA2NjM0MjQsImV4cCI6MjEwNjIzOTQyNH0.k4LZeh6OqjWaUpeU0hDAWZvwAxJnjZI3rSnqXp8ROvE"
+// 학원 연결 설정은 hada_config.js에서 읽는다(학원마다 다른 파일). 없거나 잘못되면 안내 문구를 보여준다.
+const REPORT_CONFIG = window.HADA_CONFIG || {}
+const SUPABASE_URL = /^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(REPORT_CONFIG.supabaseUrl || "") ? REPORT_CONFIG.supabaseUrl : ""
+const SUPABASE_ANON_KEY = typeof REPORT_CONFIG.supabaseAnonKey === "string" ? REPORT_CONFIG.supabaseAnonKey : ""
 
 // 반마다 서로 다른 색상 이모지를 안정적으로 배정한다 (같은 반 이름이면 항상 같은 색).
 // 실제 반 색상 데이터가 서버에서 내려오면 이 함수를 그 값으로 교체하면 된다.
@@ -57,17 +59,17 @@ function homeworkPillTone(status) {
   const s = String(status || "").trim()
   if (s === "제출") return "tone-submit"
   if (s === "미제출") return "tone-late"
+  if (s === "일부 제출") return "tone-yellow"
   return ""
 }
 // 평가 정답률에 따른 배지 색상 톤 (60미만 빨강 / 70미만 주황 / 80미만 노랑 / 90미만 초록 / 100미만 파란 / 100 파란+이모지)
 function scorePillTone(correct, total) {
   if (!total) return ""
   const pct = Math.round((correct / total) * 100)
-  if (pct >= 100) return "tone-perfect"
-  if (pct >= 90) return "tone-blue"
-  if (pct >= 80) return "tone-green"
+  // 점수 4구간(docs/DESIGN.md 1부 3장): 90 이상 초록 · 70 이상 노랑 · 50 이상 주황 · 50 미만 빨강
+  if (pct >= 90) return "tone-green"
   if (pct >= 70) return "tone-yellow"
-  if (pct >= 60) return "tone-orange"
+  if (pct >= 50) return "tone-orange"
   return "tone-red"
 }
 // 실제 점수(정답률)를 "N점 (correct/total)" 형식으로 표기한다. (100점이라고 별도 아이콘을 붙이지 않는다.)
@@ -401,6 +403,15 @@ function openFeedImage(url) {
 // 근처(KST 00시~09시)에 만들어진 기록은 그냥 앞 10자만 자르면(UTC 기준) 하루 전 날짜로 표시된다
 // (캘린더 칸이 비어보이거나 다른 날짜와 겹쳐 보이는 문제로 나타남). Asia/Seoul 기준으로 정확히
 // 변환해서 날짜를 뽑는다.
+// (v2.5.99) 시각 포함 ISO → 서울 시각 "HH:MM"(키오스크 등원·하원 시각 표시용). 값이 없거나 읽을 수 없으면 "".
+function isoToKstTime(iso) {
+  if (!iso) return ""
+  try {
+    return new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(iso))
+  } catch (e) {
+    return ""
+  }
+}
 function isoToKstDate(iso) {
   if (!iso) return null
   try {
@@ -448,7 +459,8 @@ function mapRegistration(reg) {
       // 생성된 기록은 하루 전 날짜로 잘못 표시됐다 (예: 키오스크 보강 체크인). isoToKstDate로
       // Asia/Seoul 기준 날짜를 우선 사용하고, 실패하면 기존 방식(UTC slice)으로 되돌아간다.
       const kstDate = isoToKstDate(rawDate)
-      return { date: kstDate || (rawDate ? String(rawDate).slice(0, 10) : null), weekday: a.weekday || "", status: a.status || "" }
+      // (v2.5.99) arrived/left: 키오스크가 찍은 실제 등원·하원 시각(서울 "HH:MM"). 이전 캐시에는 없을 수 있다.
+      return { date: kstDate || (rawDate ? String(rawDate).slice(0, 10) : null), weekday: a.weekday || "", status: a.status || "", arrived: isoToKstTime(a.arrived), left: isoToKstTime(a.left) }
     }),
     // 학습·과제·평가를 같은 수업일로 묶을 수 있도록 시각 포함 ISO 값을 모두 KST 날짜로 통일한다.
     study_logs: (reg.study_logs || []).map((s) => ({ type: "학습", book: s.book || "", range: s.range || "", unit: s.unit || "", date: isoToKstDate(s.iso) || (s.iso ? String(s.iso).slice(0, 10) : null), note: s.note || "", body: normalizeFeedBody(s.body), sourceBody: normalizeFeedBody(s.source_body || s.body), activityBody: normalizeFeedBody(s.activity_body) })),
@@ -487,6 +499,10 @@ async function loadReportFromServer() {
   REPORT_ACCESS_TOKEN = token || ""
   if (!token) {
     DATA_ERROR = "링크가 올바르지 않아요. 받으신 링크를 다시 확인해주세요"
+    return
+  }
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    DATA_ERROR = "학원 연결 설정이 필요해요. 학원에 문의해주세요"
     return
   }
   try {
@@ -547,7 +563,7 @@ let selectedBookTitle = null
 let scheduleMonthIndex = 0
 let expandedSection = null // "basic" | "registrations" | null
 let selectedCalDate = null
-let regTab = "books" // "books" | "calendar" | "study" | "report"
+let regTab = "home" // "home" | "books" | "calendar" | "study" | "report"
 let calMode = "attendance" // "attendance" | "homework"
 let regCalMonthIndex = 0
 // [NEW, 2026-09-19] 우측 하단 동기화 버튼(FAB) 상태. 캘린더 탭에만 있던 버튼을 화면 전역으로 옮기면서,
@@ -604,7 +620,8 @@ function toggleSection(name) {
 
 function openRegistration(token) {
   selectedToken = token
-  regTab = "books"
+  regTab = "home"
+  selectedCalDate = null
   bookStatusTab = "진행중"
   selectedBookTitle = null
   calMode = "attendance"
@@ -635,6 +652,7 @@ function normBookTitle(v) {
 }
 function regTabsList() {
   return [
+    { id: "home", icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>`, label: "홈" },
     { id: "books", icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>`, label: "교재" },
     { id: "calendar", icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>`, label: "캘린더" },
     { id: "study", icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>`, label: "학습기록" },
@@ -737,8 +755,8 @@ function renderBookDetail() {
             <div class="progress-label">진도 ${book.progress}%</div>
           </div>` : ""}
         </div>
-        <h2><span class="page-title-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg></span>학습기록</h2>
-        <div class="section-hint">이 교재와 관련된 학습 · 과제 · 평가 기록을 최근순으로 보여줍니다</div>
+        <h3 class="sec-title"><span class="sec-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg></span>학습기록</h3>
+        <div class="section-hint">이 교재의 학습 · 과제 · 평가 기록을 최근 순서로 보여줘요</div>
         <div class="seg-toggle">
           <button class="${bookLogFilter === "전체" ? "active" : ""}" onclick="setBookLogFilter('전체')">전체</button>
           <button class="${bookLogFilter === "학습" ? "active" : ""}" onclick="setBookLogFilter('학습')">학습</button>
@@ -798,6 +816,7 @@ function setBookLogFilter(filter) {
 }
 function setRegTab(tab) {
   regTab = tab
+  selectedCalDate = null
   renderApp()
   window.scrollTo({ top: 0 })
 }
@@ -809,8 +828,18 @@ function goIntro() {
   renderApp()
 }
 
+// 캘린더에서 날짜를 누르면 보고서로 넘어가지 않고, 달력을 그 주 한 줄로 접은 뒤 아래에 그날 기록을 보여준다.
+// 같은 날짜를 다시 누르면 월 보기로 돌아간다. 보고서는 그날 기록 아래 [이날 보고서 보기]로 연다.
 function selectCalDay(date) {
-  selectedCalDate = date
+  selectedCalDate = selectedCalDate === date ? null : date
+  renderApp()
+}
+function clearCalDay() {
+  selectedCalDate = null
+  renderApp()
+}
+function openDayReport(date) {
+  selectedCalDate = null
   regTab = "report"
   reportPeriod = "day"
   reportDayDate = date
@@ -897,6 +926,36 @@ function addDaysStr(dateStr, days) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
 }
 
+// 캘린더 첫 요일(v2.5.130): 달력 카드 안 오른쪽 아래(범례 줄) [월–일]/[일–토] 버튼으로 바꾸고 이 기기에 저장한다(수업 관리와 같은 키).
+// 주간 보고서 기간과 주간 선택 달력은 보고서 주(월~일)와 맞아야 해서 이 설정과 관계없이 월요일 시작이다.
+const WEEK_START_KEY = "hada_week_start"
+let weekStartSun = (() => { try { return localStorage.getItem(WEEK_START_KEY) === "sun" } catch (e) { return false } })()
+function calLeadingDays(y, m, mondayOnly) {
+  const dow = new Date(y, m - 1, 1).getDay()
+  return weekStartSun && !mondayOnly ? dow : (dow + 6) % 7
+}
+function calWeekStart(dateStr) {
+  const dow = new Date(dateStr + "T00:00:00").getDay()
+  return addDaysStr(dateStr, -(weekStartSun ? dow : (dow + 6) % 7))
+}
+function calDowHtml(cls, mondayOnly) {
+  const days = weekStartSun && !mondayOnly ? ["일", "월", "화", "수", "목", "금", "토"] : ["월", "화", "수", "목", "금", "토", "일"]
+  return days.map((w) => `<div class="${[cls, w === "토" ? "sat" : w === "일" ? "sun" : ""].filter(Boolean).join(" ")}">${w}</div>`).join("")
+}
+function weekStartToggleHtml() {
+  return `<button type="button" class="cal-today-btn cal-week-btn" onclick="toggleWeekStart()" aria-label="달력 첫 요일: ${weekStartSun ? "일요일" : "월요일"} 시작(누르면 바뀜)">${weekStartSun ? "일–토" : "월–일"}</button>`
+}
+function toggleWeekStart() {
+  weekStartSun = !weekStartSun
+  try { localStorage.setItem(WEEK_START_KEY, weekStartSun ? "sun" : "mon") } catch (e) {}
+  const reg = document.getElementById("reg-cal-area")
+  const sched = document.getElementById("schedule-cal-area")
+  if (reg) reg.innerHTML = buildRegCalendarHtml(currentReg(), calMode)
+  if (sched) sched.innerHTML = buildScheduleCalendarHtml()
+  if (!reg && !sched) renderApp()
+  document.querySelector(".cal-week-btn")?.focus()
+}
+
 // 주간 보고서는 항상 월요일~일요일로 고정한다. (요일에 관계없이 오늘이 속한 캘린더 주의 월요일을 기준으로 삼는다)
 function mondayOfWeek(dateStr) {
   const d = new Date(dateStr + "T00:00:00")
@@ -933,8 +992,8 @@ function buildScheduleCalendarHtml() {
   const y = base.getFullYear()
   const mo = base.getMonth() + 1
   const monthKey = `${y}-${String(mo).padStart(2, "0")}`
-  // 다른 캘린더들과 동일하게 월요일 시작으로 통일한다.
-  const leading = (new Date(y, mo - 1, 1).getDay() + 6) % 7
+  // 다른 캘린더들과 같은 첫 요일(calLeadingDays)
+  const leading = calLeadingDays(y, mo)
   const daysInMonth = new Date(y, mo, 0).getDate()
   const trailing = (7 - ((leading + daysInMonth) % 7)) % 7
   const firstCellDate = addDaysStr(`${y}-${String(mo).padStart(2, "0")}-01`, -leading)
@@ -944,6 +1003,8 @@ function buildScheduleCalendarHtml() {
     byDay[d] = byDay[d] || []
     byDay[d].push(n)
   })
+  // 나이스 학사일정이 이 달에 있으면 이용약관 제11조에 따라 출처를 함께 보여준다.
+  const hasSchoolSchedule = Object.values(byDay).some((list) => list.some((n) => normalizeCategoryName(n.category) === "학사 일정"))
   let cells = ""
   for (let i = 0; i < leading + daysInMonth + trailing; i++) {
     const dateStr = addDaysStr(firstCellDate, i)
@@ -967,9 +1028,11 @@ function buildScheduleCalendarHtml() {
             <button class="cal-nav-btn" onclick="navigateScheduleMonth(1)">›</button>
           </div>
         </div>
-        <div class="cal-weekdays">${["월", "화", "수", "목", "금", "토", "일"].map((w, i) => `<div class="${i === 5 ? "sat" : i === 6 ? "sun" : ""}">${w}</div>`).join("")}</div>
+        <div class="cal-weekdays">${calDowHtml("")}</div>
         <div class="cal-grid">${cells}</div>
+        <div class="cal-foot"><span></span><span></span>${weekStartToggleHtml()}</div>
       </div>
+      ${hasSchoolSchedule ? '<div class="schedule-source">학사일정 출처: 나이스 교육정보 개방 포털</div>' : ""}
     </div>
   `
 }
@@ -999,6 +1062,23 @@ function showTestDetailModal(i) {
       <div class="log-row 평가">
         <div class="log-title-row"><div class="log-title">${esc([t.book, t.range].filter(Boolean).join(" · "))}</div><span class="log-pill ${scorePillTone(t.correct ?? 0, t.total ?? 0)}">${scorePillText(t.correct ?? 0, t.total ?? 0)}</span></div>
         ${renderLogMetaRows(t.unit, t.note, [`날짜: ${t.date ? String(t.date).slice(0, 10) : "-"}`])}
+      </div>
+    `).join("")
+    : `<div class="log-row 평가"><div class="log-note">해당 기간 평가 기록이 없습니다.</div></div>`
+  document.getElementById("test-detail-modal").classList.add("active")
+}
+// (v2.5.98) 보고서 위 "평가 현황"(일간)·"평가 평균"(주간·월간) 칸을 누르면 그 날짜·기간의 평가 목록을 과제 모달과 같은 카드로 보여준다.
+function showTestPeriodModal(rangeStart, rangeEnd, label) {
+  const r = STUDENT.registrations.find((x) => x.token === selectedToken)
+  if (!r) return
+  const items = (r.tests || []).filter((t) => { const d = String(t.date || "").slice(0, 10); return d && d >= rangeStart && d <= rangeEnd })
+    .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")))
+  document.getElementById("test-detail-modal-title").textContent = label
+  document.getElementById("test-detail-modal-body").innerHTML = items.length
+    ? items.map((t) => `
+      <div class="log-row 평가">
+        <div class="log-title-row"><div class="log-title">${esc([t.book, t.range].filter(Boolean).join(" · "))}</div><span class="log-pill ${scorePillTone(t.correct ?? 0, t.total ?? 0)}">${scorePillText(t.correct ?? 0, t.total ?? 0)}</span></div>
+        ${renderLogMetaRows(t.unit, t.note, rangeStart === rangeEnd ? [] : [`날짜: ${withDow(String(t.date).slice(0, 10))}`])}
       </div>
     `).join("")
     : `<div class="log-row 평가"><div class="log-note">해당 기간 평가 기록이 없습니다.</div></div>`

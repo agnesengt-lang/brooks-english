@@ -5,13 +5,14 @@ Supabase 프로젝트 정보를 이번 학원의 값으로 한 번에 치환하�
 
 무엇을 바꾸는지 (자동 치환 대상):
   1) supabase/migrations/*.sql  — pg_cron이 호출하는 Edge Function URL
-  2) attendance_kiosk.html, legal_documents.html, student_report_part1.js
-     — 정적 호스팅이라 서버 환경변수를 못 쓰는 프런트엔드 상수 SUPABASE_URL/SUPABASE_ANON_KEY
+  2) hada_config.js — 학원별 연결 설정 파일 하나. 정적 호스팅이라 서버 환경변수를 못 쓰는
+     화면들(학부모 리포트·키오스크·법정 서류·학교 검색·관리자 설정)이 모두 이 파일의
+     supabaseUrl/supabaseAnonKey를 읽는다. 화면 파일에는 주소·키를 직접 넣지 않는다(v2.5.63).
   3) README.md — 운영 웹앱 주소 안내문
 
 무엇을 바꾸지 "않는지" (이 스크립트 범위 밖, 별도로 처리 필요):
   - GitHub Actions Secrets / Supabase Edge Function Secrets (docs/새-학원-이식-체크리스트.md 참고)
-  - Notion 쪽의 "등록(학원) DB → 안내 링크" 수식에 박힌 GitHub Pages 주소
+  - Notion 쪽의 "등록(학원) DB → 학생 페이지" 수식(예전 이름 "안내 링크")에 박힌 GitHub Pages 주소
     (예: https://hada-notion.github.io/project1/student_report.html?token=...)
     이건 코드가 아니라 Notion 수식이라 이 학원의 Notion 워크스페이스에서 직접 고쳐야 합니다.
 
@@ -38,9 +39,9 @@ TARGET_FILES_URL_KEY = [
     "supabase/migrations/20260923010000_sync_queue_audited_at.sql",
     "supabase/migrations/20260924010000_backfill_assignment_deadlines_cron.sql",
     "supabase/migrations/20260926020000_status_watchdog_cron_15min.sql",
-    "attendance_kiosk.html",
-    "legal_documents.html",
-    "student_report_part1.js",
+    "supabase/migrations/20261013030000_kiosk_today.sql",
+    "supabase/migrations/20261014060000_class_room_copy_cron.sql",
+    "hada_config.js",
 ]
 
 TARGET_FILES_PAGES_PATH = [
@@ -68,6 +69,9 @@ def replace_in_file(path: pathlib.Path, replacements: list[tuple[str, str]]) -> 
 
 
 def main() -> int:
+    # Windows 콘솔(cp949)에서도 안내 문구의 기호가 출력되게 한다.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--old-url", default="https://twczhsxybkcvjkdfdxvs.supabase.co")
     parser.add_argument("--new-url", required=True, help="예: https://abcdefgh.supabase.co")
@@ -106,7 +110,7 @@ def main() -> int:
     print("\n⚠️  이 스크립트가 다루지 않는 항목 (직접 처리 필요):")
     print("  - GitHub Actions Secrets / Supabase Edge Function Secrets 설정")
     print("    (docs/새-학원-이식-체크리스트.md 참고)")
-    print("  - Notion '등록(학원) DB → 안내 링크' 수식의 GitHub Pages 주소")
+    print("  - Notion '등록(학원) DB → 학생 페이지' 수식(예전 이름 '안내 링크')의 GitHub Pages 주소")
     print("    (Notion 워크스페이스에서 직접 이 학원의 주소로 수정)")
     print("\ngit diff로 변경 내역을 확인한 뒤 커밋하세요.")
     return 0
