@@ -2,7 +2,7 @@
 // body: { token: string }
 //
 // Notion을 직접 조회하지 않고, sync-report-cache가 미리 계산해 둔 report_cache 테이블을
-// 그대로 읽어서 응답한다 (빠릅고 Notion 레이트리밋과 무관).
+// 그대로 읽어서 응답한다 (빠릅고 Notion 레이트리미트와 무관).
 import {
   CORS_HEADERS,
   selectReportCacheByToken,

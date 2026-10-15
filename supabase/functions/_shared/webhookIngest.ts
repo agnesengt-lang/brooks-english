@@ -1,3 +1,4 @@
+import { authorizeKey, securityEnabled } from "./adminSecurity.ts"
 // _shared/webhookIngest.ts
 //
 // (2026-09-20, 웹훅 코드 정리 3단계) 등록(학원)/시험범위(학원)/클래스(학원) 등 여러 DB의 버튼 웹훅이
@@ -9,7 +10,7 @@
 // 함수마다 조금씩 다른 부분(요청 body 모양, cron 전체 스캔 겸용 여부, payload 필드 이름)이 있어서
 // 두 단계로 나눴다:
 //   - runLockedQueueWebhookForPage: pageId를 이미 알고 있을 때의 잠금 확인부터 응답까지.
-//     sync-registration-timetable/sync-registration-class-session처럼 pageId가 없으면 cron 전체
+//     sync-registration-class-session처럼 pageId가 없으면 cron 전체
 //     스캔으로 분기해야 하는 함수는 이 쪽을 직접 쓴다.
 //   - handleLockedQueueWebhook: 위에 요청 파싱(POST 확인, body 파싱, pageId 추출)까지 더한 완전한
 //     버전. 항상 pageId가 필요한 단순 버튼 웹훅(등록/종료 처리/응시학생 등록 등)은 이 쪽만 부르면 된다.
@@ -166,8 +167,8 @@ export async function handleLockedQueueWebhook(
 
   if (opts.requireAdminKey) {
     const adminKey = resolveAdminKeyFromRequest(req, body)
-    const currentAdminKey = await getCurrentAdminKey()
-    if (!adminKey || adminKey !== currentAdminKey) {
+    const currentAdminKey = securityEnabled() ? "" : await getCurrentAdminKey()
+    if (!adminKey || !await authorizeKey(req, adminKey, currentAdminKey)) {
       return jsonResponse({ error: "unauthorized" }, 401)
     }
   }
@@ -255,8 +256,8 @@ export async function handleSyncWebhook(
 
   if (opts.requireAdminKey) {
     const adminKey = resolveAdminKeyFromRequest(req, body)
-    const currentAdminKey = await getCurrentAdminKey()
-    if (!adminKey || adminKey !== currentAdminKey) {
+    const currentAdminKey = securityEnabled() ? "" : await getCurrentAdminKey()
+    if (!adminKey || !await authorizeKey(req, adminKey, currentAdminKey)) {
       return jsonResponse({ error: "unauthorized" }, 401)
     }
   }
@@ -337,8 +338,8 @@ export async function handleQueuedBackgroundWebhook(
 
   if (opts.requireAdminKey) {
     const adminKey = resolveAdminKeyFromRequest(req, (body as Record<string, unknown>) ?? {})
-    const currentAdminKey = await getCurrentAdminKey()
-    if (!adminKey || adminKey !== currentAdminKey) {
+    const currentAdminKey = securityEnabled() ? "" : await getCurrentAdminKey()
+    if (!adminKey || !await authorizeKey(req, adminKey, currentAdminKey)) {
       return jsonResponse({ error: "unauthorized" }, 401)
     }
   }
@@ -417,8 +418,8 @@ export async function handleLockedBackgroundWebhook(
 
   if (opts.requireAdminKey) {
     const adminKey = resolveAdminKeyFromRequest(req, (body as Record<string, unknown>) ?? {})
-    const currentAdminKey = await getCurrentAdminKey()
-    if (!adminKey || adminKey !== currentAdminKey) {
+    const currentAdminKey = securityEnabled() ? "" : await getCurrentAdminKey()
+    if (!adminKey || !await authorizeKey(req, adminKey, currentAdminKey)) {
       return jsonResponse({ error: "unauthorized" }, 401)
     }
   }
