@@ -56,6 +56,19 @@
 // 빠진 학생만 처리한다. "교재 상태"는 더 이상 판정 기준이 아니며, 실시간 진행 표시용으로만
 // 갱신한다. 덕분에 과거 경쟁 조건으로 남아있던 단방향 연결 상태도 자동으로 다시 잡혀 스스로
 // 복구된다.
+//
+// (2026-10-06, v2.5.7 패치 적용: 개별교재 귀속·네이밍) 원본 저장소(hada-notion/project1)의 v2.5.7.md
+// 지침을 이 파일의 PART N-13 체인 구조(원본 diff 작성 시점에는 없던 구조)에 맞게 적용했다. 원본
+// diff는 mapWithConcurrency/getPendingClassTextbookRegistrations 등 운영에 없는 구조를 전제로
+// 했으므로, 동일한 두 가지 동작 변경만 이 구조 위에 재구현했다:
+//   1. 새 개별교재는 반별교재(템플릿)의 클래스/제목을 복사하지 않는다. 제목은
+//      "정규교재명(등록명)"으로 생성하고(fullBookTitle로 제목이 여러 서식 조각으로 나뉘어도 전체
+//      문자열 사용), PROP_CLASS_ON_BOOK은 설정하지 않는다 — 개별교재의 소속 반은 "등록 → 클래스"
+//      로만 확인한다.
+//   2. 반별교재가 비어 있고 이미 등록이 연결된(=학생에게 직접 만든) 개별교재가 클래스에도 연결돼
+//      있는 경우, isClassTextbookTemplate으로 추가 제외해 반의 배포 기준(템플릿)으로 오인하지
+//      않게 했다.
+// 체인/동시성 안전장치(3-1, 3-2)는 이미 이 운영 버전에 구현되어 있어 변경하지 않았다.
 
 import {
 	PROP_CLASS,
@@ -117,11 +130,26 @@ const STATUS_NEXT = "다음 교재"
 // 클래스 단위 일괄 버튼과 동일하게 "현재 🟢 수강 중"인 등록만 대상으로 한다.
 const STATUS_ACTIVE = "🟢 수강 중"
 
+// (v2.5.7) 제목의 서식이 나뉘어 있어도 첫 조각만 복사하지 않고 전체 문자열을 사용한다.
+function fullBookTitle(page: any, name: string): string {
+	return (page?.properties?.[name]?.title ?? []).map((part: any) => part.plain_text ?? part.text?.content ?? "").join("")
+}
+
+// (v2.5.7) 반별교재가 있으면 복사된 인스턴스다. 출처 없이 등록에 직접 연결된 개별교재도 배포
+// 기준이 아니다. 그룹 교재는 여러 등록이 연결된 뒤에도 계속 배포 기준으로 유지한다.
+function isClassTextbookTemplate(page: any): boolean {
+	if (relationIds(page, PROP_TEMPLATE_RELATION).length > 0) return false
+	const mode = selectName(page, PROP_PROGRESS_MODE) ?? "그룹 진도"
+	return mode === "그룹 진도" || relationIds(page, PROP_REGISTRATION_ON_BOOK).length === 0
+}
+
 // (PART N-13) 클래스에 연결된 반별교재(템플릿) 전체를 가져온다. candidates에는 진짜 템플릿 외에도
 // 이미 생성된 개별교재 인스턴스가 섞여 있다 (둘 다 "클래스"를 갖기 때문). 진짜 템플릿은 절대
 // PROP_TEMPLATE_RELATION("반별교재")이 채워지지 않으므로, 그것으로만 필터링해서 인스턴스가 실수로
 // "템플릿"으로 취급되어 또 다른 인스턴스를 낳는(무한 증식) 일을 막는다 (createIndividualBooksForRegistration의
 // 기존 로직을 재사용 가능하도록 분리함 — 클래스 단위 체인에서 매 학생마다 재조회한다).
+// (v2.5.7) 반별교재는 비어 있지만 이미 등록이 연결된(= 학생에게 직접 만든) 개별교재가 실수로
+// 클래스에도 연결된 경우까지 isClassTextbookTemplate으로 추가 제외한다.
 async function getTemplatePagesForClass(classId: string): Promise<{ templatePages: any[]; candidateCount: number }> {
 	// (PART N-7) 클래스 페이지를 getPage로 읽어서 그 안의 "진도교재" relation을 쓰면 25개까지만
 	// 돌아온다 (Notion 페이지 조회 API의 relation 절단 제약). 그 대신 진도교재 데이터소스를
@@ -131,7 +159,7 @@ async function getTemplatePagesForClass(classId: string): Promise<{ templatePage
 		property: PROP_CLASS_ON_BOOK,
 		relation: { contains: classId },
 	})
-	const templatePages = candidates.filter((p: any) => relationIds(p, PROP_TEMPLATE_RELATION).length === 0)
+	const templatePages = candidates.filter(isClassTextbookTemplate)
 	return { templatePages, candidateCount: candidates.length }
 }
 
@@ -179,7 +207,9 @@ export async function registrationNeedsTextbookSync(registrationId: string, temp
 // (createIndividualBooksForRegistration)에서 결과를 모아 마지막에 한 번만 반영한다.
 // (PART N-13) 클래스 "교재 생성" 체인은 이제 학생을 한 번에 한 명씩만 처리하므로, 이 함수가
 // 템플릿의 "등록" relation을 read-modify-write 하더라도 서로 다른 학생의 쓰기가 경쟁하지 않는다.
-async function resolveInstanceForTemplate(registrationId: string, templatePage: any) {
+// (v2.5.7) registrationId 대신 registration 페이지 전체를 받는다 - 제목(등록명) 조합에 필요하다.
+async function resolveInstanceForTemplate(registration: any, templatePage: any) {
+	const registrationId = registration.id as string
 	const templateId = templatePage.id
 	const mode = selectName(templatePage, PROP_PROGRESS_MODE) ?? "그룹 진도"
 
@@ -207,11 +237,15 @@ async function resolveInstanceForTemplate(registrationId: string, templatePage: 
 	}
 
 	const regularBookIds = relationIds(templatePage, PROP_REGULAR_BOOK)
-	const classIds = relationIds(templatePage, PROP_CLASS_ON_BOOK)
-	const templateTitle = titleText(templatePage, PROP_BOOK_TITLE) ?? "진도교재"
+	// (v2.5.7) 개별교재의 주인은 등록이며, 반별교재는 복사 출처다. 기준 교재의 클래스/제목을
+	// 복사하지 않는다. 자동화 설정 전에도 새 교재는 같은 네이밍으로 생성한다.
+	const regularBookPage = regularBookIds[0] ? await getPage(regularBookIds[0]) : null
+	const bookName = regularBookPage ? (fullBookTitle(regularBookPage, "교재명") || "정규교재 연결 필요") : "정규교재 연결 필요"
+	const registrationName = fullBookTitle(registration, PROP_TITLE)
+	const individualTitle = `${bookName}(${registrationName})`
 
 	const properties: Record<string, unknown> = {
-		[PROP_BOOK_TITLE]: { title: [{ text: { content: templateTitle } }] },
+		[PROP_BOOK_TITLE]: { title: [{ text: { content: individualTitle } }] },
 		[PROP_TEMPLATE_RELATION]: { relation: [{ id: templateId }] },
 		[PROP_PROGRESS_MODE]: { select: { name: mode } },
 		// 새 인스턴스는 아직 진도를 시작하지 않았으니 "다음 교재"로 생성한다.
@@ -220,7 +254,7 @@ async function resolveInstanceForTemplate(registrationId: string, templatePage: 
 		[PROP_REGISTRATION_ON_BOOK]: { relation: [{ id: registrationId }] },
 	}
 	if (regularBookIds.length > 0) properties[PROP_REGULAR_BOOK] = { relation: [{ id: regularBookIds[0] }] }
-	if (classIds.length > 0) properties[PROP_CLASS_ON_BOOK] = { relation: [{ id: classIds[0] }] }
+	// (v2.5.7) PROP_CLASS_ON_BOOK 는 새 개별교재에 설정하지 않는다. 기존 행의 클래스는 변경하지 않는다.
 
 	const page = await createPage(DATA_SOURCE_PROGRESS_BOOK, properties)
 	return { instanceId: page.id, created: true }
@@ -256,7 +290,7 @@ export async function createIndividualBooksForRegistration(
 	// 여러 학생이 동시에 건드리는 것)이 사라진다. 여기서는 순서만 순차로 바꿔 코드를 단순하게 둔다.
 	const results: Array<{ instanceId: string; linked?: boolean; created?: boolean }> = []
 	for (const templatePage of templatePages) {
-		results.push(await resolveInstanceForTemplate(registrationId, templatePage))
+		results.push(await resolveInstanceForTemplate(registration, templatePage))
 	}
 
 	// 등록의 "진도교재" relation은 여기서 한 번만 최신 상태를 읽어서 반영한다 (동시 처리로 인한
