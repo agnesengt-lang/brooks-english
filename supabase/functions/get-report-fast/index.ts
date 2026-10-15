@@ -2,12 +2,14 @@
 // body: { token: string }
 //
 // Notion을 직접 조회하지 않고, sync-report-cache가 미리 계산해 둔 report_cache 테이블을
-// 그대로 읽어서 응답한다 (빠릅고 Notion 레이트리미트와 무관).
+// 그대로 읽어서 응답한다 (빠릅고 Notion 레이트리밋과 무관).
 import {
   CORS_HEADERS,
   selectReportCacheByToken,
   selectReportCacheOverviewsByStudentKey,
 } from "../_shared/reportCacheShared.ts"
+
+import { publicNoticeFields } from "../_shared/scheduleVisibility.ts"
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS })
@@ -36,7 +38,7 @@ Deno.serve(async (req: Request) => {
     // 기존 캐시에 grades가 남아 있어도 공개 응답 경계에서 제거한다.
     const { grades: _privateGrades, ...publicStudentFields } = row.student_fields ?? {}
     const payload = {
-      ...publicStudentFields,
+      ...publicNoticeFields(publicStudentFields),
       token: row.access_token,
       registration_id: row.registration_id,
       registrations: overviews,
