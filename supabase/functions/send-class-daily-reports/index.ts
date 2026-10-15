@@ -1,3 +1,4 @@
+import { authorizeKey, securityEnabled } from "../_shared/adminSecurity.ts"
 // 수업(학원) 페이지의 출석 학생에게 일일 보고서를 순차 전송한다.
 //
 // 2026-09-25 안정화:
@@ -7,7 +8,13 @@
 //   Notion에서 학생마다 다시 읽지 않는다. 체인이 끝나면 실행 캐시를 삭제한다.
 // - 한 학생이 실패해도 이름과 오류를 남기고 다음 학생을 계속 처리한다.
 
-import { createSendLogEntry, extractErrorMessage, getBotUserId, notionGetPage, resolveAdminKeyFromRequest } from "../_shared/adminShared.ts"
+import {
+  createSendLogEntry,
+  extractErrorMessage,
+  getBotUserId,
+  notionGetPage,
+  resolveAdminKeyFromRequest,
+} from "../_shared/adminShared.ts"
 import {
   getFormulaText,
   getEffectiveAdminKey,
@@ -35,22 +42,19 @@ const corsHeaders = {
 const FUNCTIONS_BASE = `${Deno.env.get("SB_URL") ?? ""}/functions/v1`
 const CONTINUATION_FLAG = "isContinuation"
 const CHAIN_BUDGET_MS = 30 * 60 * 1000
-// [2026-09-30] send-selected-notifications의 FETCH_TIMEOUT_MS(60초)와 동일하게 상향. 30초는
-// Notion API가 살짝 느려지기만 해도 다음 학생 호출이 타임아웃으로 끊길 여지가 있었다.
+// [2026-09-30] send-selected-notifications의 FETCH_TIMEOUT_MS(60초)와 맞춤.
 const CONTINUATION_TIMEOUT_MS = 60_000
 
-// [NEW, 2026-09-30] send-selected-notifications와 동일한 패턴의 전역 잠금. 여러 수업의 "일괄 전송"이
-// 거의 동시에 눌려도 실제 발송/Notion API 호출은 한 번에 한 학생씩만 순차로 진행하도록 강제해서,
-// 동시 호출로 인한 Notion API 레이트리밋/경합을 줄인다. 잠금 키가 달라 send-selected-notifications
-// 쪽 잠금과는 서로 영향을 주지 않는다(수업 일괄전송끼리만 순차화).
+// [2026-09-30] send-selected-notifications와 같은 전역 잠금 패턴을 도입한다 -- 같은 반에 대해
+// "보고서 일괄 전송" 버튼을 여러 번 누르면 체인이 겹쳐 실행될 수 있었다. 잠금 키는 서로 다른
+// 함수끼리 겹치지 않도록 별도로 둔다.
 const GLOBAL_LOCK_KEY = ["send_class_daily_reports_lock"]
-const LOCK_TTL_MS = 5 * 60 * 1000 // 5분 - 처리 하나가 이보다 오래 걸리면 잠금이 자동 해제된다 (안전장치).
-const LOCK_WAIT_TIMEOUT_MS = 10 * 60 * 1000 // 10분 넘게 기다리면 포기하고 실패로 기록한다.
+const LOCK_TTL_MS = 5 * 60 * 1000
+const LOCK_WAIT_TIMEOUT_MS = 10 * 60 * 1000
 const LOCK_POLL_INTERVAL_MS = 2000
 
 // deno-lint-ignore no-explicit-any
 type AnyKv = any
-// undefined = 아직 확인 안 함, null = 이 환경에서 KV 사용 불가.
 let kvInstance: AnyKv | null | undefined = undefined
 async function getKvSafe(): Promise<AnyKv | null> {
   if (kvInstance !== undefined) return kvInstance
@@ -62,7 +66,6 @@ async function getKvSafe(): Promise<AnyKv | null> {
   return kvInstance
 }
 
-// KV를 못 쓰는 환경을 위한 메모리 기반 잠금(같은 함수 인스턴스 안에서만 유효).
 class InMemoryMutex {
   private locked = false
   private queue: Array<() => void> = []
@@ -100,7 +103,7 @@ async function acquireGlobalLock(): Promise<{ waited: boolean; usingKv: boolean 
     if (res.ok) return { waited, usingKv: true }
     waited = true
     if (Date.now() - startedAt > LOCK_WAIT_TIMEOUT_MS) {
-      throw new Error("다른 수업의 일괄 전송이 끝나기를 기다리다 시간 초과(10분)되었습니다. 잠시 후 다시 시도해주세요.")
+      throw new Error("다른 반의 보고서 일괄전송이 끝나기를 기다리다 시간 초과(10분)되었습니다. 잠시 후 다시 시도해주세요.")
     }
     await new Promise((resolve) => setTimeout(resolve, LOCK_POLL_INTERVAL_MS))
   }
@@ -190,11 +193,6 @@ async function sendOneStudentReport(
         title: studentName || "일일 보고서",
         category: "일일 보고서",
         status: "실패",
-        // [FIX, 2026-09-30] Solapi SDK가 던지는 MessageNotReceivedError의 .message는
-        // "N개의 메시지가 접수되지 못했습니다. ... failedMessageList를 확인해주세요"라는 일반
-        // 안내문일 뿐, 실제 실패 원인은 err.failedMessageList[0].statusMessage에 들어있다.
-        // extractErrorMessage가 이 필드를 함께 뽑아내므로 실패 사유가 항상 같은 문구로만
-        // 남던 문제를 해결한다.
         failReason: extractErrorMessage(sendErr),
       })
       throw sendErr
@@ -267,29 +265,26 @@ async function finishChain(state: ChainState, message: string | null): Promise<v
 }
 
 async function processOneAndContinue(state: ChainState, adminKey: string): Promise<void> {
-  if (Date.now() - state.chainStartedAt > CHAIN_BUDGET_MS) {
-    await finishChain(
-      state,
-      `전체 처리 한도(${Math.round(CHAIN_BUDGET_MS / 60000)}분)를 초과했습니다. 완료 ${state.successCount}명, 실패 ${state.failedNames.length}명. 버튼을 다시 눌러 남은 학생을 이어서 처리하세요.`,
-    )
-    return
-  }
-
-  const attendanceId = state.remainingAttendanceIds.shift()
-  if (!attendanceId) {
-    await finishChain(state, finalMessage(state))
-    return
-  }
-
-  // [NEW, 2026-09-30] 학생 1명 처리 + 다음 이어달리기 호출(빠른 202 응답만 기다림)까지를 하나의
-  // 잠금 구간으로 묶어서, 다른 수업의 일괄 전송과 시점이 겹쳐도 실제 Notion API 호출은 항상
-  // 순차로만 나가게 한다(send-selected-notifications와 동일한 패턴).
   let lockAcquired = false
   let lockUsingKv = false
   try {
     const { usingKv } = await acquireGlobalLock()
     lockAcquired = true
     lockUsingKv = usingKv
+
+    if (Date.now() - state.chainStartedAt > CHAIN_BUDGET_MS) {
+      await finishChain(
+        state,
+        `전체 처리 한도(${Math.round(CHAIN_BUDGET_MS / 60000)}분)를 초과했습니다. 완료 ${state.successCount}명, 실패 ${state.failedNames.length}명. 버튼을 다시 눌러 남은 학생을 이어서 처리하세요.`,
+      )
+      return
+    }
+
+    const attendanceId = state.remainingAttendanceIds.shift()
+    if (!attendanceId) {
+      await finishChain(state, finalMessage(state))
+      return
+    }
 
     try {
       const result = await sendOneStudentReport(attendanceId, state.runKey, state.clickerUserId)
@@ -337,8 +332,8 @@ Deno.serve(async (req) => {
   }
 
   const adminKey = resolveAdminKeyFromRequest(req, body)
-  const effectiveAdminKey = await getEffectiveAdminKey()
-  if (!adminKey || adminKey !== effectiveAdminKey) {
+  const effectiveAdminKey = securityEnabled() ? "" : await getEffectiveAdminKey()
+  if (!adminKey || !await authorizeKey(req, adminKey, effectiveAdminKey)) {
     return new Response(JSON.stringify({ error: "unauthorized" }), {
       status: 401,
       headers: { "Content-Type": "application/json", ...corsHeaders },

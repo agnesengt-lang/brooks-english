@@ -1,3 +1,4 @@
+import { authorizeKey, securityEnabled } from "../_shared/adminSecurity.ts"
 // supabase/functions/send-tuition-notice/index.ts (v3)
 // 수강료 안내 카카오 알림톡 발송. 수강료(학원) DB의 "수강료 안내 발송" 버튼이 호출합니다.
 // - [v2] Notion 버튼의 "웹훅 보내기" 액션은 커스텀 HTTP 헤더를 보낼 수 없으므로,
@@ -108,8 +109,6 @@ async function sendAlimtalk(
       variables,
       disableSms: false,
     },
-    // [FIX, 2026-09-30] allowDuplicates 미지정 시 Solapi가 짧은 시간 안의 동일 수신번호 반복 발송을
-    // 접수 거부한다. 관리자가 실패 건을 바로 재시도하는 정상적인 경우까지 막히므로 허용한다.
   }, { allowDuplicates: true })
 }
 
@@ -127,8 +126,8 @@ Deno.serve(async (req) => {
   }
 
   const adminKey = resolveAdminKeyFromRequest(req, body)
-  const currentAdminKey = await getCurrentAdminKey()
-  if (!adminKey || adminKey !== currentAdminKey) {
+  const currentAdminKey = securityEnabled() ? "" : await getCurrentAdminKey()
+  if (!adminKey || !await authorizeKey(req, adminKey, currentAdminKey)) {
     return new Response(JSON.stringify({ error: "unauthorized" }), {
       status: 401,
       headers: { "Content-Type": "application/json", ...corsHeaders },

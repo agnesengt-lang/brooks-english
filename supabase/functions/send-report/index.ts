@@ -1,3 +1,4 @@
+import { authorizeKey, securityEnabled } from "../_shared/adminSecurity.ts"
 // supabase/functions/send-report/index.ts (v2)
 // 주간/월간 보고서 카카오 알림톡 발송을 하나로 통합한 함수입니다.
 // send-weekly-report / send-monthly-report를 대체합니다 (이 둘은 이제 사용하지 않아도 됩니다).
@@ -121,8 +122,6 @@ async function sendAlimtalk(
       variables,
       disableSms: false,
     },
-    // [FIX, 2026-09-30] allowDuplicates 미지정 시 Solapi가 짧은 시간 안의 동일 수신번호 반복 발송을
-    // 접수 거부한다. 관리자가 실패 건을 바로 재시도하는 정상적인 경우까지 막히므로 허용한다.
   }, { allowDuplicates: true })
 }
 
@@ -140,8 +139,8 @@ Deno.serve(async (req) => {
   }
 
   const adminKey = resolveAdminKeyFromRequest(req, body)
-  const currentAdminKey = await getCurrentAdminKey()
-  if (!adminKey || adminKey !== currentAdminKey) {
+  const currentAdminKey = securityEnabled() ? "" : await getCurrentAdminKey()
+  if (!adminKey || !await authorizeKey(req, adminKey, currentAdminKey)) {
     return new Response(JSON.stringify({ error: "unauthorized" }), {
       status: 401,
       headers: { "Content-Type": "application/json", ...corsHeaders },
