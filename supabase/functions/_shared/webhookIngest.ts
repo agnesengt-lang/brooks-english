@@ -58,7 +58,7 @@ import { authorizeKey, securityEnabled } from "./adminSecurity.ts"
 // 등)는 전혀 수정할 필요가 없다. 공용 헬퍼를 쓰지 않는 커스텀 3곳(cascade-delete/create-assignment/
 // fix-attendance)도 같은 패턴으로 각각 개별 수정했다.
 
-import { getPage, extractPageId, checkboxValue } from "./notionClient.ts"
+import { getPage, extractPageId, checkboxValue, describeBody } from "./notionClient.ts"
 import { runInBackground, respondAccepted } from "./backgroundTask.ts"
 import { enqueueSync, wakeSyncQueueWorker } from "./syncQueue.ts"
 import { resolveAdminKeyFromRequest, getCurrentAdminKey } from "./adminShared.ts"
@@ -163,7 +163,7 @@ export async function handleLockedQueueWebhook(
   } catch {
     body = {}
   }
-  console.log(`[${opts.functionName}] received body:`, JSON.stringify(body))
+  console.log(`[${opts.functionName}] received:`, describeBody(body))
 
   if (opts.requireAdminKey) {
     const adminKey = resolveAdminKeyFromRequest(req, body)
@@ -252,7 +252,7 @@ export async function handleSyncWebhook(
   } catch {
     body = {}
   }
-  console.log(`[${opts.functionName}] received body:`, JSON.stringify(body))
+  console.log(`[${opts.functionName}] received:`, describeBody(body))
 
   if (opts.requireAdminKey) {
     const adminKey = resolveAdminKeyFromRequest(req, body)
@@ -371,6 +371,15 @@ export async function handleQueuedBackgroundWebhook(
 // process-sync-queue의 HANDLERS에 등록할 진입점을 만들어주는 팩토리. run(id, log)만 각 함수가
 // 넘기면, "이 항목을 집는 시점에 markRunning -> run 실행 -> 성공하면 markDone, 실패하면 markError
 // 후 다시 throw(재시도 판단은 process-sync-queue가 함)"까지 공용으로 처리한다.
+// (v2.6.25) 설정 문제(발송함 미연결, 구분·기간 오류, 월간 수업 총량 없음 등)는 다시 해도 같은 결과라 큐 재시도를 하지 않고
+// ⚠️ 오류와 이유만 남긴다. 예전에는 이런 경우 로그만 남기고 ✅ 완료로 표시해, 아무것도 안 만들어진 이유를 알 수 없었다.
+export class ConfigError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "ConfigError"
+  }
+}
+
 export function makeQueuedBackgroundProcessor(
   functionName: string,
   statusSpec: StatusSpec,
@@ -395,6 +404,7 @@ export function makeQueuedBackgroundProcessor(
         (err as Error).stack,
       )
       await markError(id, statusSpec, (err as Error).message)
+      if (err instanceof ConfigError) return
       throw err
     }
   }
