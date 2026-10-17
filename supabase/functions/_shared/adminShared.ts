@@ -18,7 +18,7 @@
 // "교재비 안내"가 빠져 있었다. send-textbook-notice가 이 카테고리로 로그를 남기려다 타입체크가
 // 또 실패했음 -- 아래에 다시 추가한다.
 
-import { fetchWithRetry } from "./notionClient.ts"
+import { fetchWithRetry, normalizeProps, sendWithPropAliases } from "./notionClient.ts"
 import { securityEnabled, currentInternalKey, authorizeKey } from "./adminSecurity.ts"
 export { authorizeKey } from "./adminSecurity.ts"
 
@@ -161,15 +161,16 @@ export async function notionQueryDatabaseAll(databaseId: string, body: Record<st
 export async function notionGetPage(pageId: string): Promise<any> {
   const res = await fetchWithRetry(NOTION_API_BASE + "/pages/" + pageId, { headers: notionHeaders() })
   if (!res.ok) throw new Error("Notion page fetch failed: " + res.status + " " + (await res.text()))
-  return res.json()
+  return normalizeProps(await res.json())
 }
 
 export async function notionPatchPageProperties(pageId: string, properties: Record<string, unknown>): Promise<any> {
-  const res = await fetchWithRetry(NOTION_API_BASE + "/pages/" + pageId, {
+  // (v2.7) 새 속성 이름이 없으면 예전 이름으로 다시 보낸다(notionClient의 PROP_ALIASES).
+  const res = await sendWithPropAliases(properties, (props) => fetchWithRetry(NOTION_API_BASE + "/pages/" + pageId, {
     method: "PATCH",
     headers: notionHeaders(),
-    body: JSON.stringify({ properties }),
-  })
+    body: JSON.stringify({ properties: props }),
+  }))
   if (!res.ok) throw new Error("Notion page update failed: " + res.status + " " + (await res.text()))
   return res.json()
 }
@@ -383,7 +384,8 @@ export type AlimtalkConfig = {
 }
 
 const alimtalkConfigCache = new Map<string, { value: AlimtalkConfig; expiresAt: number }>()
-const ALIMTALK_CONFIG_CACHE_MS = 60_000
+// (v2.6.20) 일일 보고서를 큐로 차례로 보낼 때 같은 설정을 다시 읽지 않도록 5분 재사용(설정은 거의 바뀌지 않음).
+const ALIMTALK_CONFIG_CACHE_MS = 5 * 60_000
 
 // [NEW] 주간/월간 보고서는 카카오 템플릿이 하나로 통합되어 있어서, "알림톡 설정(학원) DB"에서는 "보고서" 하나의 행으로 조회합니다.
 // 전송로그의 "발송 구분"(일일/주간/월간/수강료)은 이와 별개로 그대로 유지됩니다.

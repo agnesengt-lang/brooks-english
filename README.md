@@ -1,4 +1,4 @@
-# 하다 학원관리 (brooks-english)
+# 하다 학원관리 (project1)
 
 Notion 기반 학원관리 시스템의 백엔드(Supabase Edge Functions)·마이그레이션·운영 웹앱(GitHub Pages) 저장소입니다.
 

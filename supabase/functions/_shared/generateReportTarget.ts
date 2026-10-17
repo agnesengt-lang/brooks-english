@@ -19,8 +19,8 @@
 // 시점에 설정 행을 관계로 미리 연결해둘 필요가 없다. (이 함수는 더 이상 getScheduleConfig를
 // 호출하지 않는다.)
 
-import { getPage, createPage, queryAllPages, archivePage, mapWithConcurrency } from "./notionClient.ts"
-import { makeQueuedBackgroundProcessor } from "./webhookIngest.ts"
+import { getPage, createPage, queryAllPages, archivePage, mapWithConcurrency, relIds } from "./notionClient.ts"
+import { ConfigError, makeQueuedBackgroundProcessor } from "./webhookIngest.ts"
 import { PROP_LAST_ERROR } from "./constants.ts"
 import { type StatusSpec } from "./statusTracking.ts"
 import {
@@ -58,14 +58,14 @@ const REG_CONCURRENCY = 4
 // 그에 맞는 필터 형태를 써야 한다 (Notion API는 속성 타입마다 필터 모양이 다르다).
 type DatePropKind = "date" | "rollup_date"
 
-async function findIdsInRange(
+async function findPagesInRange(
 	dataSourceId: string,
 	dateProp: string,
 	registrationId: string,
 	startDate: string,
 	endDate: string,
 	datePropKind: DatePropKind = "date",
-): Promise<string[]> {
+): Promise<any[]> {
 	const startIso = `${startDate}T00:00:00+09:00`
 	const endIso = `${endDate}T23:59:59+09:00`
 	const dateFilter = (range: { on_or_after?: string; on_or_before?: string }) =>
@@ -77,7 +77,7 @@ async function findIdsInRange(
 			dateFilter({ on_or_before: endIso }),
 		],
 	})
-	return results.map((p: any) => p.id)
+	return results
 }
 
 // 같은 등록+기간+구분의 기존 보고서 id 목록을 오래된 것부터 정렬해서 반환한다 (처리 중 재클릭으로
@@ -102,15 +102,15 @@ export async function processClass(classId: string, log: string[]): Promise<void
 
 	const batchId: string | null = classPage.properties?.[PROP_CLASS_REPORT_TARGET]?.relation?.[0]?.id ?? null
 	if (!batchId) {
-		log.push(`[skip] ${className}: "${PROP_CLASS_REPORT_TARGET}"이 연결되지 않음 (알림톡 발송함을 먼저 연결해주세요)`)
-		return
+		throw new ConfigError(`클래스의 "${PROP_CLASS_REPORT_TARGET}"에 알림톡 발송함이 연결되지 않았습니다. 구분이 "주간 보고서" 또는 "월간 보고서"인 발송함을 연결해 주세요.`)
 	}
 	const batchPage = await getPage(batchId)
 	const reportType: string | undefined = batchPage.properties?.[PROP_BATCH_TYPE]?.select?.name
 	const rawStart: string | undefined = batchPage.properties?.[PROP_BATCH_PERIOD]?.date?.start
 	if (!rawStart || (reportType !== "주간 보고서" && reportType !== "월간 보고서")) {
-		log.push(`[skip] ${className}: 연결된 발송함(${batchId})의 "${PROP_BATCH_PERIOD}"/"${PROP_BATCH_TYPE}"이 올바르지 않음 (구분: ${reportType || "없음"})`)
-		return
+		throw new ConfigError(!rawStart
+			? `연결된 발송함에 "${PROP_BATCH_PERIOD}"이 입력되지 않았습니다.`
+			: `"${PROP_CLASS_REPORT_TARGET}"에 연결된 발송함의 구분이 "${reportType || "없음"}"입니다. 구분이 "주간 보고서" 또는 "월간 보고서"인 발송함을 연결해 주세요.`)
 	}
 	const rawStartDate = rawStart.slice(0, 10)
 	const isWeekly = reportType === REPORT_TYPE_WEEKLY
@@ -145,11 +145,12 @@ export async function processClass(classId: string, log: string[]): Promise<void
 			skipped++
 			return
 		}
-		const [attendanceIds, recordIds, activityIds] = await Promise.all([
-			findIdsInRange(DS_ATTENDANCE, "수업일시", reg.id, periodStart, periodEnd),
-			findIdsInRange(DS_LEARNING_RECORD, "수업일", reg.id, periodStart, periodEnd),
-			findIdsInRange(DS_STUDY_ACTIVITY, "수업일", reg.id, periodStart, periodEnd, "rollup_date"),
-		])
+		// (v2.6.19) 기간은 출석의 실제 날짜(수업일시)로만 정한다. 학습기록·학습활동은 각자의 날짜 수식(수업일)이 아니라
+		// 기간 안 출석에 연결된 것으로 가져온다(수식이 하루 밀려도 보고서 기간이 틀어지지 않게).
+		const attendances = await findPagesInRange(DS_ATTENDANCE, "수업일시", reg.id, periodStart, periodEnd)
+		const attendanceIds = attendances.map((p: any) => p.id)
+		const recordIds = [...new Set(attendances.flatMap((p: any) => relIds(p.properties?.["학습기록"])))]
+		const activityIds = [...new Set(attendances.flatMap((p: any) => relIds(p.properties?.["학습활동"])))]
 		const periodLabel = isWeekly ? `${periodStart}~${periodEnd}` : periodStart.slice(0, 7)
 		const title = `${reg.studentLabel} ${reportType} (${periodLabel})`
 		await createPage(DS_REPORT, {
