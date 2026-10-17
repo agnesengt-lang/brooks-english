@@ -64,9 +64,9 @@ const PROP_RECORD_MAKEUP = "보강"
 // + "학습기록 처리 시작 시각"(date)로 전환. 수업/출석/진도교재(학원) 3개 DB 모두 같은 속성 이름을
 // 쓰므로 하나의 스펙(RECORD_GEN_STATUS_SPEC)을 그대로 재사용한다. 기존 checkbox는 폐기. 마스터플랜 참고.
 export const RECORD_GEN_STATUS_SPEC: StatusSpec = {
-	statusProp: "학습기록 상태",
+	statusProp: "학습기록 생성 상태",
 	errorProp: PROP_LAST_ERROR,
-	startedAtProp: "학습기록 처리 시작 시각",
+	startedAtProp: "학습기록 생성 시작 시각",
 }
 
 const GROUP_PROGRESS_TYPE = "그룹 진도"
@@ -322,6 +322,11 @@ export async function finishCreateLearningRecord(sessionId: string): Promise<unk
 // finishCreateLearningRecord와는 완전히 별개로, 이 출석 건 자신의 "등록"(limit 1) 하나만을 대상으로
 // 학습기록을 생성한다. 수업 relation은 비워두고, 생성되는 학습기록마다 "보강" checkbox를 켜서
 // 진도교재의 "진행도" 계산(다른 학생들의 정상 수업 학습기록만 반영하도록)에서 자동으로 제외되게 한다.
+// (v2.6.17) 모든 학습 관리는 수업을 거친다: 수업 없는 출석으로는 학습기록을 만들지 않는다.
+// 아래 finishCreateLearningRecordForAttendance(출석 단독 경로)는 더 이상 부르지 않는다(예전 기록 이해용으로 남김).
+export const MAKEUP_SESSION_REQUIRED =
+	"수업에 연결되지 않은 출석이에요. 수업 관리 보강 대기실에서 보강 수업을 만들어 배정한 뒤, 그 수업에서 학습기록을 만들어 주세요."
+
 export async function finishCreateLearningRecordForAttendance(attendanceId: string): Promise<unknown> {
 	const attendancePage = await getPage(attendanceId)
 	const registrationIds = dedupe(relIds(attendancePage, PROP_ATTENDANCE_REGISTRATION))
@@ -415,6 +420,7 @@ export async function processCreateLearningRecordQueueItem(payload: {
 	sessionId?: string
 	attendanceId?: string
 	statusTargetIds: string[]
+	plan?: string | null
 }): Promise<void> {
 	// (2026-09-27, 그룹 진도 보강 지원) attendanceId가 있으면(= index.ts가 수업 없는 출석을 감지한
 	// 경우) 세션 로스터 전체를 대상으로 하는 기존 경로 대신, 그 출석 하나만을 위한 단일 학생 경로를
@@ -422,9 +428,29 @@ export async function processCreateLearningRecordQueueItem(payload: {
 	const label = payload.sessionId ?? payload.attendanceId ?? "unknown"
 	try {
 		await Promise.all(payload.statusTargetIds.map((id) => setRecordGenRunning(id, true)))
-		const created = payload.attendanceId
-			? await finishCreateLearningRecordForAttendance(payload.attendanceId)
-			: await finishCreateLearningRecord(payload.sessionId as string)
+		// (v2.6.17) 배포 전에 큐에 들어간 수업 없는 출석 항목도 기록을 만들지 않는다(오류로 남기고 재시도하지 않음).
+		if (payload.attendanceId && !payload.sessionId) {
+			await Promise.all(payload.statusTargetIds.map((id) => setRecordGenError(id, MAKEUP_SESSION_REQUIRED)))
+			return
+		}
+		const sessionId = payload.sessionId as string
+		// (v2.6.29) 수업 수식 "학습기록 계획"이 있으면 그대로 만들기만 한다. 본문에 없으면(출석에서 누른 경우 등)
+		// 수업을 한 번 읽어 수식 값을 받고, 수식이 아직 없는 운영이면 예전 방식(서버가 명단·교재를 다 읽음).
+		let text = payload.plan ?? ""
+		if (!text || !recordPlanFromText(text)) {
+			const session = await recordPlanDeps.getPage(sessionId) as JsonRecord
+			text = recordPlanText((session?.properties as JsonRecord)?.[RECORD_PLAN_PROP])
+		}
+		let plan: RecordPlan | null
+		try {
+			plan = recordPlanFromText(text)
+		} catch (err) {
+			// 계획 형식 오류는 다시 해도 같으므로 ⚠️ 오류만 남기고 재시도하지 않는다.
+			await Promise.all(payload.statusTargetIds.map((id) => setRecordGenError(id, (err as Error).message)))
+			return
+		}
+		const created = plan ? await createLearningRecordsFromPlan(sessionId, plan) : await finishCreateLearningRecord(sessionId)
+		if (plan) console.log(`[create-learning-record] plan items=${plan.items.length}`)
 		await Promise.all(payload.statusTargetIds.map((id) => setRecordGenDone(id)))
 		console.log("create-learning-record (queue) finished", label, created)
 	} catch (err) {
@@ -434,4 +460,80 @@ export async function processCreateLearningRecordQueueItem(payload: {
 		)
 		throw err
 	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// (v2.6.29) 수업 수식 "학습기록 계획"대로 만들기만. 무엇을 만들지는 수업(학원) DB 수식이 계산한다:
+//   {"v":1,"mk":1?,"items":[{"b":"진도교재","l":"라이브러리","s":["과목"],"a":["출석"],"r":["등록"],"t":"[학습] 교재(반) MM.DD(요일)"}]}
+//   = 명단 학생들의 진도교재 중 "오늘 학습"이 체크된 교재마다 학습기록 1개. 그룹 진도(보강 아님)는 수업 출석·명단 전원,
+//     개별 진도(또는 보강)는 그 교재를 가진 학생의 출석·등록만. 제목 날짜는 수식이 한국 시간으로 만든다.
+// 서버가 하던 출석·등록·진도교재·라이브러리·클래스 읽기가 없어지고, 교재마다 "오늘 학습" 확인 1번(재시도·두 번 클릭
+// 때 중복 방지) + 체크 해제 1번 + 학습기록 만들기 1번만 남는다. 체크 해제를 만들기보다 먼저 하는 순서는 예전과 같다.
+export const RECORD_PLAN_PROP = "학습기록 계획"
+
+export type RecordPlanItem = { book: string; lib?: string; subjects: string[]; atts: string[]; regs: string[]; title: string }
+export type RecordPlan = { makeup: boolean; items: RecordPlanItem[] }
+
+const PLAN_ID = /^[0-9a-f]{32}$/
+const planId = (v: unknown): string | null => {
+	const s = String(v ?? "").replace(/-/g, "").toLowerCase()
+	return PLAN_ID.test(s) ? s : null
+}
+const planIds = (v: unknown, what: string): string[] => {
+	if (!Array.isArray(v)) throw new Error(`학습기록 계획의 ${what} 값이 올바르지 않습니다.`)
+	const out = v.map(planId)
+	if (out.some((x) => !x)) throw new Error(`학습기록 계획의 ${what} 값이 올바르지 않습니다.`)
+	return dedupe(out as string[])
+}
+
+// 수식 값이 아니면(속성이 없거나 JSON이 아니면) null → 예전 방식. 형식이 틀리면 Error(만들지 않고 ⚠️ 오류).
+export function recordPlanFromText(text: unknown): RecordPlan | null {
+	if (typeof text !== "string" || !text.trim()) return null
+	let raw: any
+	try { raw = JSON.parse(text) } catch { return null }
+	if (!raw || raw.v !== 1) return null
+	if (!Array.isArray(raw.items)) throw new Error("학습기록 계획에 items가 없습니다.")
+	const items: RecordPlanItem[] = raw.items.map((it: any) => {
+		const book = planId(it?.b)
+		if (!book) throw new Error("학습기록 계획의 진도교재 값이 올바르지 않습니다.")
+		const atts = planIds(it?.a ?? [], "출석")
+		return {
+			book,
+			lib: planId(it?.l) ?? undefined,
+			subjects: planIds(it?.s ?? [], "과목"),
+			atts,
+			regs: planIds(it?.r ?? [], "등록"),
+			title: String(it?.t ?? "").trim() || "[학습]",
+		}
+	})
+	return { makeup: raw.mk === 1, items }
+}
+
+export const recordPlanText = (p: any): string => (p?.type === "formula" || p?.formula ? String(p.formula?.string ?? "") : "")
+
+export const recordPlanDeps = { getPage, update: updatePageProperties, create: createPage }
+
+export async function createLearningRecordsFromPlan(sessionId: string, plan: RecordPlan): Promise<unknown> {
+	const deps = recordPlanDeps
+	if (!plan.items.length) return { message: "no_books_marked_today", sessionId }
+	const created = await mapWithConcurrency(plan.items, 3, async (it) => {
+		// 이미 처리된 교재(두 번 클릭·큐 재시도로 같은 계획이 다시 온 경우)는 "오늘 학습"이 이미 풀려 있어 건너뛴다.
+		const bookPage = await deps.getPage(it.book)
+		if (!checkboxValue(bookPage as JsonRecord, PROP_BOOK_TODAY)) return { bookId: it.book, skipped: "not_marked_today" }
+		await deps.update(it.book, { [PROP_BOOK_TODAY]: { checkbox: false } })
+		const props: JsonRecord = {
+			[PROP_RECORD_TITLE]: { title: [{ text: { content: it.title } }] },
+			[PROP_RECORD_BOOK]: { relation: [{ id: it.book }] },
+			[PROP_RECORD_ATTENDANCE]: { relation: it.atts.slice(0, 100).map((id) => ({ id })) },
+			[PROP_RECORD_REGISTRATION]: { relation: it.regs.slice(0, 100).map((id) => ({ id })) },
+			[PROP_RECORD_SESSION]: { relation: [{ id: sessionId }] },
+			[PROP_RECORD_CATEGORY]: { select: { name: "학습" } },
+			...(plan.makeup ? { [PROP_RECORD_MAKEUP]: { checkbox: true } } : {}),
+			...(it.lib ? { [PROP_RECORD_REGULAR_BOOK]: { relation: [{ id: it.lib }] } } : {}),
+			...(it.subjects.length ? { [PROP_RECORD_SUBJECT]: { relation: it.subjects.map((id) => ({ id })) } } : {}),
+		}
+		const page = await deps.create(DS_STUDY_RECORD, props)
+		return { bookId: it.book, recordId: (page as JsonRecord).id }
+	})
+	return { ok: true, sessionId, created }
 }

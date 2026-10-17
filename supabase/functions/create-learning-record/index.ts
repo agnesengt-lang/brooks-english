@@ -1,6 +1,15 @@
 import { authorizeKey, securityEnabled } from "../_shared/adminSecurity.ts"
-// create-learning-record v7
+// create-learning-record v9
 // Trigger: 수업(세션) DB 또는 출석(학원) DB의 "학습기록 생성" 버튼 웹훅
+//
+// v9 변경 사항 (v2.6.29, 학습기록 계획):
+//   - 수업 버튼 웹훅 본문에 수업 수식 "학습기록 계획"이 실려 오면 클릭된 페이지가 수업이므로 다시 읽지 않고
+//     그 값을 큐에 함께 넣는다. 큐는 계획대로 만들기만 한다(_shared/createLearningRecordTarget.ts 참고).
+//     출석에서 누른 경우와 수식이 없는 운영은 예전처럼 처리한다.
+//
+// v8 변경 사항 (v2.6.17, 수업 중심 원칙):
+//   - 수업 없는 출석에서 누르면 학습기록을 만들지 않고 그 출석의 "마지막 오류"에 안내를 남긴다(보강 대기실에서
+//     보강 수업을 만들어 배정한 뒤 그 수업에서 만든다). 아래 v7의 출석 단독 경로는 쓰지 않는다.
 //
 // v7 변경 사항 (2026-09-27, 그룹 진도 보강 지원):
 //   - 출석에 연결된 수업이 없는 경우(그룹 진도 반에서 결석 후 보강을 온 경우 등) 더 이상
@@ -40,7 +49,7 @@ import { authorizeKey, securityEnabled } from "../_shared/adminSecurity.ts"
 // 1~4. (지연된) 수업 기준으로 등록/출석/진도교재를 읽어 학습기록을 생성하는 무거운 작업은 process-sync-queue
 //    워커가 processCreateLearningRecordQueueItem을 통해 수행한다.
 
-import { getPage, relIds as relIdsFromProp, extractPageId } from "../_shared/notionClient.ts"
+import { getPage, relIds as relIdsFromProp, extractPageId, describeBody } from "../_shared/notionClient.ts"
 import { respondAccepted } from "../_shared/backgroundTask.ts"
 import { enqueueSync, wakeSyncQueueWorker } from "../_shared/syncQueue.ts"
 import { DS_ATTENDANCE } from "../_shared/constants.ts"
@@ -49,6 +58,10 @@ import {
 	PROP_ATTENDANCE_SESSION,
 	dedupe,
 	setRecordGenQueued,
+	setRecordGenError,
+	MAKEUP_SESSION_REQUIRED,
+	RECORD_PLAN_PROP,
+	recordPlanText,
 } from "../_shared/createLearningRecordTarget.ts"
 
 type JsonRecord = Record<string, unknown>
@@ -70,8 +83,9 @@ async function handleRequest(req: Request): Promise<Response> {
 	let body: JsonRecord = {}
 	try {
 		const text = await req.text()
-		console.log("create-learning-record raw body:", text)
 		body = text ? (JSON.parse(text) as JsonRecord) : {}
+		// (v2.6.17) 본문 전체(adminKey가 있을 수 있음) 대신 페이지 id와 키 이름만 남긴다(v2.6.10과 같은 방식).
+		console.log("create-learning-record body:", describeBody(body))
 	} catch (err) {
 		console.error("Failed to parse request body", err)
 		return new Response(JSON.stringify({ error: "invalid_json" }), { status: 400 })
@@ -99,7 +113,10 @@ async function handleRequest(req: Request): Promise<Response> {
 	// 학생 경로(attendanceId 기반, finishCreateLearningRecordForAttendance)로 보낸다.
 	let sessionId: string | undefined = clickedId
 	let attendanceId: string | undefined
-	try {
+	// (v2.6.29) 수업 버튼이면 본문에 "학습기록 계획"이 있다 → 클릭된 페이지가 수업이므로 읽지 않는다.
+	const bodyProps = ((body.data as JsonRecord | undefined)?.properties ?? {}) as JsonRecord
+	const plan = recordPlanText(bodyProps[RECORD_PLAN_PROP]) || null
+	if (!plan) try {
 		const clickedPage = await getPage(clickedId)
 		const parentDataSourceId = (clickedPage as JsonRecord | undefined)?.parent
 			? ((clickedPage.parent as JsonRecord).data_source_id as string | undefined)
@@ -107,9 +124,14 @@ async function handleRequest(req: Request): Promise<Response> {
 		if (parentDataSourceId === DS_ATTENDANCE) {
 			const linkedSessionIds = relIds(clickedPage, PROP_ATTENDANCE_SESSION)
 			if (linkedSessionIds.length === 0) {
-				console.log("Attendance page has no linked session, routing to makeup (attendance-only) path", clickedId)
-				sessionId = undefined
-				attendanceId = clickedId
+				// (v2.6.17) 모든 학습 관리는 수업을 거친다. 수업 없는 출석(보강 대기실)으로는 학습기록을 만들지 않고,
+				// 보강 수업을 만들어 배정한 뒤 그 수업에서 만들도록 안내한다(v2.6.x의 출석 단독 경로는 쓰지 않음).
+				console.log("Attendance page has no linked session; learning record refused (makeup session required)", clickedId)
+				await setRecordGenError(clickedId, MAKEUP_SESSION_REQUIRED)
+				return new Response(JSON.stringify({ ok: false, reason: "makeup_session_required", message: MAKEUP_SESSION_REQUIRED }), {
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				})
 			} else {
 				sessionId = linkedSessionIds[0]
 			}
@@ -129,7 +151,7 @@ async function handleRequest(req: Request): Promise<Response> {
 	// Notion의 "웹훅 보내기" 버튼 액션은 이 응답을 동기적으로 기다린다. 실제 생성 작업은
 	// sync_queue에 적재해 process-sync-queue 워커가 순서대로 처리하게 하고, 이 함수는 즉시 202로 응답한다.
 	// 진행 상황은 수업/출석의 "학습기록 생성중" 체크박스(이미 켜져 있음)로 확인할 수 있다.
-	await enqueueSync("create-learning-record", { sessionId, attendanceId, statusTargetIds })
+	await enqueueSync("create-learning-record", { sessionId, attendanceId, statusTargetIds, plan })
 	wakeSyncQueueWorker()
 
 	return respondAccepted({ sessionId, attendanceId })

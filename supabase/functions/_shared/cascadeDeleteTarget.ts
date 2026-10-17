@@ -16,9 +16,8 @@
 // depth===0일 때 이미 호출하므로 여기서 다시 부를 필요는 없다. 마스터플랜:
 // https://app.notion.com/p/903c90386c1d473494c5df6306c53517
 
-import { getPage, queryAllPages, updatePageProperties, archivePage, mapWithConcurrency } from "./notionClient.ts"
+import { getPage, queryAllPages, updatePageProperties, archivePage, mapWithConcurrency, relIds, fullRelationIds, withFullRelations } from "./notionClient.ts"
 import {
-	PROP_DELETE_CHECKBOX,
 	PROP_LAST_ERROR,
 	DS_CLASS_SESSION,
 	DS_ATTENDANCE,
@@ -28,8 +27,9 @@ import {
 	DS_TEXTBOOK_DISTRIBUTION,
 	DS_TEXTBOOK_PAYMENT,
 } from "./constants.ts"
-import { isRunning, markQueued, markRunning, markDone, markError, type StatusSpec } from "./statusTracking.ts"
+import { isRunning, markQueued, markRunning, markDone, markError, STATUS_DONE, type StatusSpec } from "./statusTracking.ts"
 import { removeLater } from "./classRoomCopy.ts"
+import { decideRecordRemoval } from "./learningRecordShare.ts"
 // (2026-09-21, 이식성 리팩토링) 위 7개 데이터소스 ID는 이 파일에 직접 하드코딩돼 있었는데, 이제
 // constants.ts 한 곳에서 환경변수로 읽어와 공유한다 (constants.ts 상단 주석 참고). export하지 않아도
 // 되도록 이 파일 밖에서 이 이름들을 가져다 쓰는 곳이 없는지 확인했다.
@@ -149,20 +149,26 @@ async function getStudyRecordProgressType(studyRecordPage: any): Promise<string 
   return textbookPage.properties?.[PROP_PROGRESS_TYPE]?.select?.name
 }
 
-async function disconnectRelation(pageId: string, propName: string, removeId: string): Promise<void> {
-  const page = await getPage(pageId)
-  const current: string[] = (page.properties?.[propName]?.relation ?? []).map((r: any) => r.id)
+// (v2.6.32) 조회 결과도 관계를 25개까지만 준다. 잘렸으면 끝까지 읽은 뒤 고쳐 쓴다(fullRelationIds).
+async function disconnectRelation(kid: any, propName: string, removeId: string): Promise<void> {
+  const pageId = kid.id
+  const current: string[] = await fullRelationIds(kid, propName)
   const filtered = current.filter((id: string) => id !== removeId)
   if (filtered.length === current.length) return
   await updatePageProperties(pageId, { [propName]: { relation: filtered.map((id) => ({ id })) } })
 }
 
+// (v2.6.31) 누른 페이지(depth 0)만 읽고 상태를 표시한다. 하위 페이지는 조회 결과(kidPage)를 그대로 쓰고,
+// "삭제 체크"를 켜지 않으며(켜면 7개 DB의 삭제 체크 자동화가 하위마다 웹훅을 또 보내 같은 페이지를 다시
+// 읽고 큐에 넣었다), 상태 표시 없이 휴지통으로만 보낸다. 누른 페이지는 ✅ 완료 쓰기와 휴지통 보내기를 한 번에.
+// 중간에 실패하면 큐가 누른 페이지부터 다시 하고, 이미 휴지통에 간 하위는 조회에서 빠져 남은 것만 이어서 지운다.
 export async function cascadeDelete(
   pageId: string,
   log: string[],
   visited: Set<string>,
   depth = 0,
   resumeNote?: string,
+  kidPage?: any,
 ): Promise<void> {
   if (depth > MAX_CASCADE_DEPTH) {
     log.push(`⚠️ 최대 재귀 깊이(${MAX_CASCADE_DEPTH})를 초과하여 중단함: ${pageId}`)
@@ -174,7 +180,7 @@ export async function cascadeDelete(
   }
   visited.add(pageId)
 
-  const page = await getPage(pageId)
+  const page = kidPage ?? await getPage(pageId)
   if (page.archived || page.in_trash) {
     log.push(`⏭️ 이미 삭제되어 있음: ${pageId}`)
     return
@@ -189,7 +195,9 @@ export async function cascadeDelete(
   const name = config ? titleOf(page, config.titleProp) : pageId
   const indent = "  ".repeat(depth)
 
-  if (depth === 0 && resumeNote) {
+  if (depth > 0) {
+    // 하위 페이지: 상태 표시 없음
+  } else if (resumeNote) {
     // markRunning은 상태/시작시각을 갱신하며 마지막 오류를 비우므로, 재시작 사실을 보여주는
     // resumeNote는 그 다음에 별도로 마지막 오류 칸에 덧붙인다("작업중"이면서 정보성 메세지가
     // 함께 보이는 상태 — 기존 checkbox 방식과 동일한 최종 결과).
@@ -218,27 +226,45 @@ export async function cascadeDelete(
 
             if (child.dataSourceId === DS_STUDY_RECORD) {
               const progressType = await getStudyRecordProgressType(kid)
-              if (progressType === GROUP_PROGRESS_TYPE) {
-                await disconnectRelation(kid.id, child.relationPropOnChild, pageId)
+              // (v2.6.16) 출석을 지울 때: 다른 학생도 쓰는 기록(그룹 진도·주제로 만든 반 전체 기록)은 남기고
+              // 이 출석과 이 학생만 기록에서 뺀다. 이 학생만의 기록(개별 진도)은 아래에서 함께 지운다.
+              if (dataSourceId === DS_ATTENDANCE) {
+                // 수업째 지우는 중이면 그 수업의 기록은 수업 쪽에서 처리한다(여기서 연결을 끊으면 쓸데없는 쓰기·경합).
+                const deleting = new Set([...visited].map((v) => v.replace(/-/g, "")))
+                if (relIds(kid.properties?.["수업"]).some((id: string) => deleting.has(id.replace(/-/g, "")))) return
+                // (v2.6.32) 반 전체 기록의 출석·등록이 25개를 넘으면 끝까지 읽고 판단·고쳐 쓴다.
+                const full = await withFullRelations(kid, ["출석", "등록"])
+                const decision = decideRecordRemoval(full, [pageId], relIds(page.properties?.["등록"]), progressType)
+                if (decision.action === "detach") {
+                  await updatePageProperties(kid.id, decision.properties)
+                  log.push(`${indent}🔗 [${name}] 다른 학생도 쓰는 학습기록이라 이 출석·학생 연결만 해제함: ${kid.id}`)
+                  return
+                }
+              } else if (progressType === GROUP_PROGRESS_TYPE) {
+                await disconnectRelation(kid, child.relationPropOnChild, pageId)
                 log.push(`${indent}🔗 [${name}] 그룹 진도 학습기록이라 관계만 해제함 (${child.relationPropOnChild}): ${kid.id}`)
                 return
               }
             }
 
-            await updatePageProperties(kid.id, { [PROP_DELETE_CHECKBOX]: { checkbox: true } })
-            log.push(`${indent}☑️ [${name}] 하위 페이지 삭제 표시 (${child.relationPropOnChild}): ${kid.id}`)
-            await cascadeDelete(kid.id, log, visited, depth + 1)
+            await cascadeDelete(kid.id, log, visited, depth + 1, undefined, kid)
           })
         }),
       )
     }
 
-    await archivePage(pageId)
+    if (depth === 0) {
+      await archivePage(pageId, {
+        [CASCADE_DELETE_STATUS_SPEC.statusProp]: { select: { name: STATUS_DONE } },
+        [CASCADE_DELETE_STATUS_SPEC.errorProp]: { rich_text: [] },
+      })
+    } else {
+      await archivePage(pageId)
+    }
     removeLater([pageId]) // 수업 관리 복사본에서도 지운다(v2.5.115, 수업·출석·학습기록·학습활동이면)
-    await markDeletingDone(pageId)
     log.push(`${indent}🗑️ [${name}] 삭제되어 휴지통으로 이동됨`)
   } catch (err) {
-    await markDeletingError(pageId, (err as Error).message)
+    if (depth === 0) await markDeletingError(pageId, (err as Error).message)
     throw err
   }
 }

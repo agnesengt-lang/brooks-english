@@ -19,17 +19,23 @@ import {
 } from "./constants.ts"
 // (2026-09-21, 이식성 리팩토링) 아래 4개 데이터소스 ID는 constants.ts로 이동함 — 그 파일 상단 주석 참고.
 import { markRunning, markDone, markError, type StatusSpec } from "./statusTracking.ts"
+import { type DeadlineIO, pendingDeadlinesForRegistrations } from "./assignmentDeadline.ts"
+import { getCurrentAdminKey } from "./adminShared.ts"
+import { enqueueSync } from "./syncQueue.ts"
 
 // 수업(학원) DB의 "출석조정 상태"(select) + "마지막 오류" 텍스트 필드로 진행 상황을 표시한다
 // (2026-09-11: 공유 select "동기화 상태"에서 체크박스로 마이그레이션 -> 2026-09-22, Phase 3에서
 // 다시 상태(select)+처리 시작 시각으로 전환. 기존 "출석조정 처리중" checkbox는 폐기. 마스터플랜 참고).
 // best-effort로 갱신하며 실패해도 무시한다.
 export const PROP_SHARED_LAST_ERROR = PROP_LAST_ERROR
+// 출석 DB의 "삭제"는 버튼이고, 삭제 자동화(cascade-delete)를 부르는 체크박스는 "삭제 체크"다(v2.6.11 수정 — 예전 코드는
+// "삭제"에 체크를 써서 Notion이 거절했고, 초과·중복 출석 표시가 그 자리에서 오류로 끝났다).
+const PROP_DELETE_CHECK = "삭제 체크"
 
 export const ATTENDANCE_FIX_STATUS_SPEC: StatusSpec = {
-  statusProp: "출석조정 상태",
+  statusProp: "출석 조정 상태",
   errorProp: PROP_SHARED_LAST_ERROR,
-  startedAtProp: "출석조정 처리 시작 시각",
+  startedAtProp: "출석 조정 시작 시각",
 }
 
 export async function markAttendanceFixRunning(classSessionId: string): Promise<void> {
@@ -74,75 +80,27 @@ function addDays(dateStr: string, days: number): string {
 }
 
 // ---- 학습활동(학원) DB: 대기 중인 과제 마감 백필 ----
-// [PART N-11, 2026-09-23] generate-classes/index.ts에 있던 linkPendingAssignmentDeadlines를
-// 여기로 가져왔다. 배경: generate-classes의 일괄 생성 체인이 "수업 생성"과 "출석 생성"을 완전히
-// 분리하면서(사용자 요청), 수업 생성 시점에는 출석이 아직 없어서 이 로직이 그때는 못 돈다 -- 대신
-// 출석이 실제로 만들어지는 이 시점(fixAttendanceForClassSession, 아래)에서 함께 처리해야
-// 맞다. 개별 "출석 조정" 버튼에도 이 안전망이 함께 적용되는 효과가 있다(기존엔 없었음, 개선).
-const PROP_ACTIVITY_CATEGORY = "구분"
-const PROP_ACTIVITY_REGISTRATION = "등록"
-const PROP_ACTIVITY_ATTENDANCE = "출석"
-const PROP_ACTIVITY_RECORD = "학습기록"
-const PROP_ACTIVITY_DEADLINE = "과제 마감"
-const CATEGORY_ASSIGNMENT = "과제"
-const PROP_RECORD_DATE = "수업일" // 학습기록(학원) DB
-const PROP_ATTENDANCE_REGISTRATION = "등록" // 출석(학원) DB
-const PROP_ATTENDANCE_CLASS_DATETIME = "수업일시" // 출석(학원) DB
-
-// 등록 1건에 대해, "과제 마감"이 아직 비어있는 과제 학습활동들을 찾아서 그 학생의 다음 수업(출석)이
-// 새로 생겨났는지 확인하고 있으면 연결한다. 출제 당시엔 다음 수업이 없어서 마감을 못 잡았던 경우,
-// 나중에 출석이 생성될 때(이 함수가 호출될 때) 자동으로 채워지도록 하는 안전망이다.
-async function linkPendingAssignmentDeadlines(regId: string, log: string[]) {
-  const pending = await queryDataSource(DS_STUDY_ACTIVITY, {
-    filter: {
-      and: [
-        { property: PROP_ACTIVITY_REGISTRATION, relation: { contains: regId } },
-        { property: PROP_ACTIVITY_CATEGORY, select: { equals: CATEGORY_ASSIGNMENT } },
-        { property: PROP_ACTIVITY_DEADLINE, relation: { is_empty: true } },
-      ],
-    },
-    page_size: 100,
-  })
-  if (pending.results.length === 0) return
-
-  let linked = 0
-  for (const activity of pending.results as any[]) {
-    let issueDate: string | null = null
-    const attendanceIds = relIds(activity.properties[PROP_ACTIVITY_ATTENDANCE])
-    if (attendanceIds.length > 0) {
-      const attendancePage = await getPage(attendanceIds[0])
-      issueDate = dateStart(attendancePage, PROP_ATTENDANCE_CLASS_DATETIME)
-    }
-    if (!issueDate) {
-      const recordIds = relIds(activity.properties[PROP_ACTIVITY_RECORD])
-      if (recordIds.length > 0) {
-        const recordPage = await getPage(recordIds[0])
-        issueDate = dateStart(recordPage, PROP_RECORD_DATE)
-      }
-    }
-    if (!issueDate) continue
-
-    const nextAttendance = await queryDataSource(DS_ATTENDANCE, {
-      filter: {
-        and: [
-          { property: PROP_ATTENDANCE_REGISTRATION, relation: { contains: regId } },
-          { property: PROP_ATTENDANCE_CLASS_DATETIME, date: { after: issueDate } },
-        ],
-      },
-      sorts: [{ property: PROP_ATTENDANCE_CLASS_DATETIME, direction: "ascending" }],
-      page_size: 1,
-    })
-    const nextId = nextAttendance.results[0]?.id
-    if (!nextId) continue
-
-    await updatePageProperties(activity.id, {
-      [PROP_ACTIVITY_DEADLINE]: { relation: [{ id: nextId }] },
-    })
-    linked++
-  }
-  if (linked > 0) {
-    log.push(`📌 대기 중이던 과제 마감 ${linked}건을 새로 생긴 수업에 연결함 (등록 ${regId})`)
-  }
+// (v2.6.12) 수업추가(generate-classes)와 같은 방식으로 맞춘다: 새 출석(또는 연결한 출석)의 "과제마감 백필 대상"에
+// 그 학생의 대기 과제를 넣고 "⏳ 대기열"로 두면 backfill-assignment-deadlines 큐가 "자동 마감 기준"을 지키며 연결한다.
+// 예전 linkPendingAssignmentDeadlines는 학생마다 활동·출석을 하나씩 읽어 바로 연결했고, 자동 마감 기준을 보지 않았다.
+const PROP_ATTENDANCE_BACKFILL_TARGET = "과제마감 백필 대상"
+const PROP_ATTENDANCE_BACKFILL_STATUS = "과제마감 백필 상태"
+const deadlineIO: DeadlineIO = { getPage, query: queryDataSource, update: updatePageProperties, attendanceDb: DS_ATTENDANCE, activityDb: DS_STUDY_ACTIVITY }
+const normId = (id: string) => id.replace(/-/g, "").toLowerCase()
+function backfillProps(targets: string[] | undefined): Record<string, unknown> {
+  return targets && targets.length
+    ? { [PROP_ATTENDANCE_BACKFILL_TARGET]: { relation: targets.map((id) => ({ id })) }, [PROP_ATTENDANCE_BACKFILL_STATUS]: { select: { name: "⏳ 대기열" } } }
+    : {}
+}
+// 대기열에 넣은 백필을 바로 처리하도록 워커를 깨운다(실패해도 pg_cron이 10분마다 처리).
+function wakeDeadlineWorker(): void {
+  const base = Deno.env.get("SB_URL")
+  if (!base) return
+  const p = getCurrentAdminKey()
+    .then((key) => fetch(`${base}/functions/v1/backfill-assignment-deadlines`, { method: "POST", headers: { "Content-Type": "application/json", "x-admin-key": key }, body: JSON.stringify({ source: "wake" }) }))
+    .catch((err) => console.error("[fix-attendance] 과제 마감 워커 깨우기 실패(예약 실행이 처리):", (err as Error)?.message))
+  const rt = (globalThis as any).EdgeRuntime
+  if (rt && typeof rt.waitUntil === "function") rt.waitUntil(p)
 }
 
 export async function fixAttendanceForClassSession(
@@ -252,8 +210,10 @@ export async function fixAttendanceForClassSession(
   let deletedFlagCount = 0
 
   // --- Missing: active registration with no attendance on this class session ---
-  for (const regId of activeRegIds) {
-    if (attendanceByRegId.has(regId)) continue
+  const missingRegIds = [...activeRegIds].filter((id) => !attendanceByRegId.has(id))
+  const deadlines = missingRegIds.length ? await pendingDeadlinesForRegistrations(deadlineIO, missingRegIds) : new Map<string, string[]>()
+  for (const regId of missingRegIds) {
+    const backfill = backfillProps(deadlines.get(normId(regId)))
 
     // Look for an existing attendance page for this registration, same calendar day,
     // not yet linked to any class session.
@@ -274,6 +234,7 @@ export async function fixAttendanceForClassSession(
         클래스: { relation: [{ id: classId }] },
         // 2026-09-16 버그 수정: 기존 미연결 출석을 새로 연결할 때도 담당강사를 채운다.
         ...(teacherIds.length ? { 담당강사: { relation: teacherIds.map((id) => ({ id })) } } : {}),
+        ...backfill,
       })
       linkedCount++
       log.push(`[linked] ${sessionName}: existing unlinked attendance ${candidate.id} -> reg ${regId}`)
@@ -286,26 +247,19 @@ export async function fixAttendanceForClassSession(
         등록: { relation: [{ id: regId }] },
         // 2026-09-16 버그 수정: 수업의 담당강사를 새로 만드는 출석에도 함께 복사한다.
         ...(teacherIds.length ? { 담당강사: { relation: teacherIds.map((id) => ({ id })) } } : {}),
+        ...backfill,
       })
       createdCount++
       log.push(`[created] ${sessionName}: new attendance ${newAttendance.id} for reg ${regId}`)
     }
-
-    // [PART N-11, 2026-09-23] 출석이 실제로 (링크 또는 생성으로) 채워진 시점에, 그 학생의 대기 중인
-    // 과제 마감을 이 출석에 연결할 수 있는지 확인한다 (예전엔 generate-classes 자신의 세션 생성
-    // 루프에서 이 일을 했는데, 수업 생성과 출석 생성을 분리하면서 이 시점으로 옮겨왔다).
-    try {
-      await linkPendingAssignmentDeadlines(regId, log)
-    } catch (err) {
-      log.push(`[error] linkPendingAssignmentDeadlines(${regId}): ${(err as Error).message}`)
-    }
   }
+  if ([...deadlines.values()].some((v) => v.length)) wakeDeadlineWorker()
 
   // --- Extra: attendance whose registration is no longer actively enrolled ---
   for (const [regId, atts] of attendanceByRegId) {
     if (activeRegIds.has(regId)) continue
     for (const att of atts) {
-      await updatePageProperties(att.id, { 삭제: { checkbox: true } })
+      await updatePageProperties(att.id, { [PROP_DELETE_CHECK]: { checkbox: true } })
       deletedFlagCount++
       log.push(`[flagged-extra] ${sessionName}: attendance ${att.id} (reg ${regId} not actively enrolled)`)
     }
@@ -321,7 +275,7 @@ export async function fixAttendanceForClassSession(
     )
     const [, ...rest] = sorted
     for (const dup of rest) {
-      await updatePageProperties(dup.id, { 삭제: { checkbox: true } })
+      await updatePageProperties(dup.id, { [PROP_DELETE_CHECK]: { checkbox: true } })
       deletedFlagCount++
       log.push(`[flagged-duplicate] ${sessionName}: attendance ${dup.id} (reg ${regId} duplicate)`)
     }
@@ -330,4 +284,187 @@ export async function fixAttendanceForClassSession(
   if (createdCount === 0 && linkedCount === 0 && deletedFlagCount === 0) {
     log.push(`[ok] ${sessionName}: attendance already matches active registrations, nothing to fix`)
   }
+}
+// ---------- v2.6.11 웹훅 재정리 2단계: 수업의 "출석 조정 정보" 수식으로 조회 없이 처리 ----------
+// 수업(학원) DB 수식 "출석 조정 정보"가 이 수업 날짜에 다녀야 할 등록(시간표의 등록 중 등록일 ≤ 수업일 ≤ 종료일)과
+// 지금 출석을 비교해 JSON 한 줄을 만든다. Notion 자동화("출석조정 상태"가 ⚪ 대기로 바뀌면)가 이 값과 클래스·수업일시·담당강사·
+// 보강을 웹훅 본문에 싣고, 서버는 Notion을 읽지 않고 쓰기만 한다. 수식은 관계 25개 제한이 없다.
+//   { "v":1, "day":"YYYY-MM-DD", "skip":"사유"(있으면 아무것도 안 함),
+//     "add":[{"reg":등록id,"att":같은 날 수업 없는 출석id 또는 "","rec":[이 수업의 학습기록 중 그 등록 것]}],
+//     "del":[명단 밖·중복 출석 id], "roster":[다녀야 할 등록 id](지금 수업 명단과 다를 때만) }
+// Notion 호출: 출석 연결·생성 수 + 삭제 표시 수 + 학생별 과제 마감 확인 + 수업 쓰기 1(명단 + 완료).
+export type FixPlan = {
+	v: 1
+	day?: string
+	skip?: string
+	add: { reg: string; att?: string; rec?: string[] }[]
+	del: string[]
+	roster?: string[]
+	makeup?: boolean // (v2.6.17) 수식 "mk":1 — 보강 수업(합치기만)
+	books?: string[] // (v2.6.21) 수식 "books" — 명단 학생들의 진도교재 전부. 있으면 수업 "진도교재"(양방향 관계, 진도교재 쪽 "수업"은 숨김)를 이 값으로 맞춘다
+}
+export type FixSession = { id: string; classIds: string[]; teacherIds: string[]; start: string | null; end: string | null; makeup: boolean }
+
+const ID = /^[0-9a-f]{32}$/
+const cleanId = (v: unknown): string | null => {
+	const s = String(v ?? "").replace(/-/g, "").toLowerCase()
+	return ID.test(s) ? s : null
+}
+// 수식 값이 아니면(속성이 없거나 형식이 다르면) null → 예전 방식(fixAttendanceForClassSession)으로 처리한다.
+export function planFromText(text: unknown): FixPlan | null {
+	if (typeof text !== "string" || !text.trim()) return null
+	let raw: any
+	try { raw = JSON.parse(text) } catch { return null }
+	if (!raw || raw.v !== 1) return null
+	if (typeof raw.skip === "string" && raw.skip) return { v: 1, skip: raw.skip, add: [], del: [] }
+	if (!Array.isArray(raw.add) || !Array.isArray(raw.del)) return null
+	const add: FixPlan["add"] = []
+	for (const a of raw.add) {
+		const reg = cleanId(a?.reg)
+		if (!reg) return null
+		add.push({ reg, att: cleanId(a?.att) ?? undefined, rec: (Array.isArray(a?.rec) ? a.rec : []).map(cleanId).filter(Boolean) as string[] })
+	}
+	const del = raw.del.map(cleanId)
+	if (del.some((x: string | null) => !x)) return null
+	let roster: string[] | undefined
+	if (raw.roster !== undefined) {
+		if (!Array.isArray(raw.roster)) return null
+		roster = raw.roster.map(cleanId)
+		if (roster!.some((x) => !x)) return null
+	}
+	let books: string[] | undefined
+	if (raw.books !== undefined) {
+		if (!Array.isArray(raw.books)) return null
+		books = [...new Set(raw.books.map(cleanId))] as string[]
+		if (books.some((x) => !x)) return null
+	}
+	return { v: 1, day: typeof raw.day === "string" ? raw.day : undefined, add, del, roster, ...(raw.mk === 1 ? { makeup: true } : {}), ...(books ? { books } : {}) }
+}
+
+const propText = (p: any): string => {
+	if (!p) return ""
+	if (p.type === "formula" || p.formula) return String(p.formula?.string ?? "")
+	if (Array.isArray(p.rich_text)) return p.rich_text.map((t: any) => t.plain_text ?? t.text?.content ?? "").join("")
+	return ""
+}
+
+// Notion 자동화 웹훅 본문에서 계획과 수업 정보를 꺼낸다. 하나라도 없으면 null.
+export function planFromWebhookBody(body: any, sessionId: string): { plan: FixPlan; session: FixSession } | null {
+	const p = body?.data?.properties
+	if (!p || typeof p !== "object") return null
+	const plan = planFromText(propText(p["출석 조정 정보"]))
+	if (!plan) return null
+	if (!Array.isArray(p["클래스"]?.relation) || !("수업일시" in p)) return null
+	return {
+		plan,
+		session: {
+			id: sessionId,
+			classIds: relIds(p["클래스"]),
+			teacherIds: relIds(p["담당강사"]),
+			start: p["수업일시"]?.date?.start ?? null,
+			end: p["수업일시"]?.date?.end ?? null,
+			makeup: p["보강"]?.checkbox === true,
+		},
+	}
+}
+
+export async function applyFixPlan(session: FixSession, plan: FixPlan, log: string[], extraSessionProps: Record<string, unknown> = {}) {
+	const finish = async (props: Record<string, unknown>) => {
+		const all = { ...props, ...extraSessionProps }
+		if (Object.keys(all).length) await updatePageProperties(session.id, all)
+	}
+	if (plan.skip) {
+		log.push(`[skip] ${session.id}: ${plan.skip}`)
+		return await finish({})
+	}
+	// (v2.6.17) 보강 수업은 예외로 다룬다: 합치기만 한다. 명단에 있는데 출석이 없으면 만들거나 연결하고(수식이 같은 날
+	// 🔵 보강 출석만 고름), 출석은 있는데 명단에 없으면 수식이 명단(roster)에 더한다. 지우기는 하지 않는다(사람이 직접).
+	// 예전 수식(보강이면 skip)을 쓰는 운영은 위에서 그대로 건너뛴다. 보강 출석에는 과제 마감을 연결하지 않는다
+	// (정규 수업의 다음 출석이 마감이 된다). 보강 수업은 클래스가 없을 수 있다(보강 대기실에서 만든 수업).
+	// 웹훅 본문에 "보강"이 빠져도 수식의 mk 표시로 보강 수업임을 안다(정규 규칙으로 지우는 일이 없게 두 곳에서 확인).
+	const makeup = session.makeup || plan.makeup === true
+	if (makeup && plan.del.length) log.push(`[keep] ${session.id}: 보강 수업이라 출석 ${plan.del.length}건을 지우지 않음`)
+	const del = makeup ? [] : plan.del
+	if (!session.start || (!makeup && !session.classIds.length)) throw new Error("수업일시·클래스가 없어 출석을 맞출 수 없어요.")
+	// 안전장치: 다녀야 할 학생이 0명으로 계산됐는데 출석을 지우라는 계획은 실행하지 않는다(수식 오류일 가능성이 크다 —
+	// 처음 만든 수식이 날짜를 글자로 비교해 모든 출석을 지우라고 계산한 적이 있다). 반 전체 종료는 손으로 정리한다.
+	if (plan.roster && plan.roster.length === 0 && del.length > 0) {
+		throw new Error(`다녀야 할 학생이 0명인데 출석 ${del.length}건을 지우라는 계산이 나왔어요. "출석 조정 정보" 수식을 확인해 주세요. 반 학생이 모두 종료됐다면 출석은 직접 정리해 주세요.`)
+	}
+	const day = plan.day ?? session.start.slice(0, 10)
+	const classId = session.classIds[0]
+	const classRel = classId ? { 클래스: { relation: [{ id: classId }] } } : {}
+	const teacher = session.teacherIds.length ? { 담당강사: { relation: session.teacherIds.map((id) => ({ id })) } } : {}
+
+	// 1) 출석이 없는 등록: 같은 날 수업 없는 출석이 있으면 연결, 없으면 새로 만든다(이 수업 학습기록·대기 과제 백필도 함께).
+	//    대기 과제는 학생 전원을 한 번에 조회한다.
+	const deadlines = plan.add.length && !makeup ? await pendingDeadlinesForRegistrations(deadlineIO, plan.add.map((a) => a.reg)) : new Map<string, string[]>()
+	for (const a of plan.add) {
+		const backfill = backfillProps(deadlines.get(normId(a.reg)))
+		if (a.att) {
+			await updatePageProperties(a.att, { 수업: { relation: [{ id: session.id }] }, ...classRel, ...teacher, ...backfill })
+			log.push(`[linked] ${session.id}: attendance ${a.att} -> reg ${a.reg}`)
+		} else {
+			await createPage(DS_ATTENDANCE, {
+				출석: { title: [{ text: { content: `${day} ${makeup ? "보강" : "출석"}` } }] },
+				수업일시: { date: { start: session.start, end: session.end ?? session.start } },
+				수업: { relation: [{ id: session.id }] },
+				...classRel,
+				...(makeup ? { "출석 상태": { select: { name: "🔵 보강" } } } : {}),
+				등록: { relation: [{ id: a.reg }] },
+				...(a.rec?.length ? { 학습기록: { relation: a.rec.map((id) => ({ id })) } } : {}),
+				...teacher,
+				...backfill,
+			})
+			log.push(`[created] ${session.id}: attendance for reg ${a.reg}`)
+		}
+	}
+	if ([...deadlines.values()].some((v) => v.length)) wakeDeadlineWorker()
+	// 2) 명단 밖·중복 출석: 삭제 체크 → 출석마다 삭제 자동화(cascade-delete)
+	for (const id of del) {
+		await updatePageProperties(id, { [PROP_DELETE_CHECK]: { checkbox: true } })
+		log.push(`[flagged] ${session.id}: attendance ${id}`)
+	}
+	// 3) 수업 명단(수식이 다를 때만 보냄) + 진도교재(v2.6.21, 수식이 보낼 때만) + 완료를 수업 쓰기 한 번에.
+	//    진도교재는 양방향 관계지만 서버는 수업 쪽만 쓴다(진도교재 쪽 "수업"은 숨김, 수업 페이지 보기 필터용). 명단이 바뀌는 길은 모두 출석 조정으로
+	//    모이므로(수업 생성·수업추가·일괄 생성·등록 수업 생성·종료 처리·간편 보강) 여기서 함께 맞추면 항상 명단과 같다.
+	await finish({
+		...(plan.roster ? { 등록: { relation: plan.roster.map((id) => ({ id })) } } : {}),
+		...(plan.books ? { 진도교재: { relation: plan.books.slice(0, 100).map((id) => ({ id })) } } : {}), // Notion 관계 한 번 쓰기 최대 100개
+	})
+	if (!plan.add.length && !del.length && !plan.roster) log.push(`[ok] ${session.id}: 출석이 명단과 같아요`)
+}
+
+// 큐 처리(워커가 한 건씩). 계획이 있으면 쓰기만, 없으면 예전 방식으로 수업을 읽어 맞춘다. 실패하면 오류를 쓰고 큐 재시도.
+export async function processFixAttendanceQueueItem(payload: { pageId: string; plan?: FixPlan | null; session?: FixSession | null }): Promise<void> {
+	const log: string[] = []
+	const done = { [ATTENDANCE_FIX_STATUS_SPEC.statusProp]: { select: { name: "✅ 완료" } }, [ATTENDANCE_FIX_STATUS_SPEC.errorProp]: { rich_text: [] } }
+	try {
+		// 본문에 계획이 없으면 수업 페이지를 한 번 읽어 수식 값을 쓴다. Notion 자동화는 여러 DB를 거치는 수식을
+		// "권한 없는 DB를 참조"한다며 웹훅에 싣지 못하게 막지만, 서버 연결은 페이지 조회로 수식 결과를 받는다.
+		let parsed = payload.plan && payload.session ? { plan: payload.plan, session: payload.session } : null
+		let page: any = null
+		if (!parsed) {
+			page = await getPage(payload.pageId)
+			parsed = planFromWebhookBody({ data: { properties: page.properties } }, payload.pageId)
+		}
+		if (parsed) await applyFixPlan(parsed.session, parsed.plan, log, done)
+		else {
+			// 수식 속성이 없는 운영(아직 v2.6.11 Notion 작업 전)은 예전 방식으로 수업을 읽어 맞춘다.
+			await fixAttendanceForClassSession(payload.pageId, log)
+			await updatePageProperties(payload.pageId, done)
+		}
+	} catch (err) {
+		// (v2.6.13) 본문에 실려 온 계획으로 하다 실패했으면, 같은 계획으로 다시 하지 않는다(이미 만든 출석을 또 만들 수 있음).
+		// 계획 없는 새 항목을 넣어 다음 처리 때 수업 페이지를 새로 읽고 정말 빠진 것만 맞춘다. 페이지를 읽은 경우는 큐 재시도.
+		if (payload.plan) {
+			console.error("[fix-attendance] 본문 계획으로 처리 중 실패 → 페이지를 새로 읽는 항목으로 다시 넣음:", payload.pageId, (err as Error).message)
+			await enqueueSync("fix-attendance", { pageId: payload.pageId })
+			return
+		}
+		await markError(payload.pageId, ATTENDANCE_FIX_STATUS_SPEC, (err as Error).message).catch(() => {})
+		throw err
+	} finally {
+		console.log("[fix-attendance] queue finished:", payload.pageId, "\n", log.join("\n"))
+	}
 }

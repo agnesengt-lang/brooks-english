@@ -79,6 +79,14 @@ import { processCascadeDeleteQueueItem } from "../_shared/cascadeDeleteTarget.ts
 import { processGenerateReportQueueItem } from "../_shared/generateReportTarget.ts"
 import { processGenerateTuitionQueueItem } from "../_shared/generateTuitionTarget.ts"
 import { processDashboardLinkQueueItem } from "../_shared/dashboardLinkTarget.ts"
+import { processRegistrationTextbookQueueItem } from "../_shared/registrationTextbookTarget.ts"
+import { processFixAttendanceQueueItem } from "../_shared/fixAttendanceTarget.ts"
+import { processGenerateClassesQueueItem } from "../_shared/generateClassesQueue.ts"
+import { processSessionDateQueueItem } from "../_shared/sessionDateMove.ts"
+import { processDailyReportQueueItem } from "../_shared/dailyReportQueue.ts"
+import { processAssignmentQueueItem } from "../_shared/assignmentPlan.ts"
+import { processNoticeQueueItem } from "../_shared/noticeQueue.ts"
+import { processCartPlanQueueItem } from "../_shared/cartPlan.ts"
 
 // target별 실제 처리 함수. 앞으로 다른 "일괄(bulk)" 웹훅 함수나, 사람이 여러 페이지를 동시에 클릭할
 // 수 있는 "개별" 웹훅 함수가 추가되면 여기에 추가한다 (위 2026-09-22 Phase 6 주석 참고).
@@ -105,6 +113,22 @@ const HANDLERS: Record<string, (payload: any, cachedGetPage: (id: string) => Pro
   "generate-report": processGenerateReportQueueItem,
   "generate-tuition": processGenerateTuitionQueueItem,
   "sync-dashboard-link": processDashboardLinkQueueItem,
+  // (v2.6.10) 등록 DB "교재 상태 ⚪ 대기" 자동화 → sync-registration-textbook/queue
+  "sync-registration-textbook": processRegistrationTextbookQueueItem,
+  // (v2.6.11) 수업 DB "출석조정 상태 ⚪ 대기" 자동화 → fix-attendance/queue
+  "fix-attendance": processFixAttendanceQueueItem,
+  // (v2.6.12) 시간표 DB "상태 ⚪ 대기" 자동화 → generate-classes/queue (메뉴 일괄 생성을 시간표 하나씩)
+  "generate-classes": processGenerateClassesQueueItem,
+  // (v2.6.18) 수업 DB "수업일시 편집" 자동화 → fix-attendance/session-date (출석 날짜·기록 제목 날짜 맞추기)
+  "session-date": processSessionDateQueueItem,
+  // (v2.6.20) 출석 DB "보고서 전송 상태 ⚪ 대기" 자동화 → send-daily-report/queue (일일 보고서 한 건씩)
+  "send-daily-report": processDailyReportQueueItem,
+  // (v2.6.22) 학습기록 DB "활동 생성 상태 ⚪ 대기" 자동화 → create-assignment/queue (수식 "학습활동 계획"대로 만들기만)
+  "create-assignment": processAssignmentQueueItem,
+  // (v2.6.24) 보고서·수강료·교재비 DB "전송 상태 ⚪ 대기" 자동화 → send-report|send-tuition-notice|send-textbook-notice/queue
+  "notice": processNoticeQueueItem,
+  // (v2.6.26) 교재비 [진도교재 담기] → sync-textbook-distribution/from-cart/queue (수식 "담기 계획"대로 배부만)
+  "cart-plan": processCartPlanQueueItem,
 }
 
 // (2026-09-22, Phase 6) 이 워커 한 번의 실행(위 sync_queue_worker_lock으로 항상 한 번에 하나만

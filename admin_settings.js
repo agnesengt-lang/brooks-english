@@ -59,61 +59,59 @@ const DELETE={trigger:{check:['삭제 체크',true]},note:'삭제 버튼은 체�
 const CHECKLIST=[
  ['등록(학원)',[
   ['reg-link-regenerate','링크 재발급',BUTTON,route('toggle-report-link'),{header:['x-link-action','regenerate'],note:'추가 헤더가 하나 더 있습니다. 헤더 버튼으로 값을 복사합니다.'}],
-  ['reg-link-disable','링크 비활성화',AUTO,route('toggle-report-link'),{header:['x-link-action','disable'],trigger:{check:['링크 비활성화',true]}}],
-  ['reg-link-enable','링크 활성화',AUTO,route('toggle-report-link'),{header:['x-link-action','enable'],trigger:{check:['링크 비활성화',false]}}],
+  ['reg-link-disable','[웹훅] 링크 비활성화',AUTO,route('toggle-report-link'),{header:['x-link-action','disable'],trigger:{check:['링크 비활성화',true]}}],
+  ['reg-link-enable','[웹훅] 링크 활성화',AUTO,route('toggle-report-link'),{header:['x-link-action','enable'],trigger:{check:['링크 비활성화',false]}}],
   ['reg-report-sync','학생 페이지 동기화',BUTTON,route('sync-report-cache')],
-  ['reg-textbook','교재 생성',BUTTON,route('sync-registration-textbook'),{path:'/create-individual',note:'주소 끝의 /create-individual까지 넣습니다. 클래스의 교재 생성과 주소가 다릅니다.'}],
-  ['reg-enroll','시간표 설정',BUTTON,route('sync-registration-enroll')],
-  ['reg-session','수업 생성',BUTTON,route('sync-registration-class-session')],
-  ['reg-end','종료 처리',BUTTON,route('sync-registration-end')]]],
+  ['reg-textbook-queue','[웹훅] 교재 생성',AUTO,route('sync-registration-textbook'),{path:'/queue',trigger:{when:'속성 편집',select:['교재 생성 상태','⚪ 대기']},note:'주소 끝의 /queue까지 넣습니다. [교재 생성] 버튼은 교재 생성 상태만 바꾸고, 키는 이 자동화에 있습니다(v2.7).'}],
+  ['reg-end-cleanup','종료 처리',BUTTON,route('sync-registration-textbook'),{path:'/cleanup-on-end',note:'주소 끝의 /cleanup-on-end까지 넣습니다. 버튼 마지막 단계의 교재 정리 웹훅입니다(v2.7).'}]]],
  ['클래스(학원)',[
-  ['class-tuition','월 수강료 생성',BUTTON,route('generate-tuition')],
-  ['class-textbook-fee','교재비 생성',BUTTON,route('sync-textbook-distribution'),{path:'/from-class-carts',note:'주소 끝의 /from-class-carts까지 넣습니다.'}],
-  ['class-textbook','교재 생성',BUTTON,route('sync-registration-textbook'),{path:'/create-class',note:'주소 끝의 /create-class까지 넣습니다. 등록의 교재 생성과 주소가 다릅니다.'}],
+  ['class-tuition','월 수강료 생성 (예전 방식)',BUTTON,route('generate-tuition'),{note:'v2.7부터 [월 수강료 생성]은 웹훅 없이 등록의 수강료 생성 상태만 바꾸고 등록 DB 자동화가 수강료를 만듭니다. 아직 예전 버튼(웹훅)을 쓰는 경우에만 키를 바꿉니다.'}],
+  ['class-textbook-fee','교재비 생성 (예전 방식)',BUTTON,route('sync-textbook-distribution'),{path:'/from-class-carts',note:'v2.7부터 [교재비 생성]은 웹훅 없이 등록의 교재비 생성 상태만 바꾸고 등록 DB 자동화가 교재비를 만듭니다. 아직 예전 버튼(웹훅)을 쓰는 경우에만 키를 바꿉니다.'}],
   ['class-report-sync','학생 페이지 동기화',BUTTON,route('sync-class-report-cache')],
-  ['class-report','보고서 생성',BUTTON,route('generate-report')]]],
- ['시간표(학원)',[['timetable-classes','수업추가',BUTTON,route('generate-classes')]]],
+  ['class-report','보고서 생성 (예전 방식)',BUTTON,route('generate-report'),{note:'v2.7부터 [보고서 생성]은 웹훅 없이 등록의 보고서 생성 상태만 바꾸고 등록 DB 자동화가 보고서를 만듭니다. 아직 예전 버튼(웹훅)을 쓰는 경우에만 키를 바꿉니다.'}]]],
  ['메뉴(학원)',[['menu-bulk-classes','다음주 수업 일괄 생성',BUTTON,route('generate-classes'),{path:'?mode=bulk',note:'주소 끝의 ?mode=bulk까지 넣습니다.'}]],{
   text:'메뉴 DB의 어떤 페이지(예: 수업 HOME)를 열어도 제목 아래 속성 줄에 "다음주 수업 일괄 생성" 버튼이 있습니다. 속성 이름을 클릭하고 "자동화 편집"을 눌러 웹훅 보내기의 값 칸을 바꿉니다. 메뉴 DB에는 "웹훅 등록" 보기가 없어도 됩니다.',
   image:'assets/admin-settings/menu-bulk-button.png',alt:'메뉴 페이지 상단 속성 줄의 다음주 수업 일괄 생성 버튼'}],
  ['수업(학원)',[
-  ['session-record','학습기록 생성',BUTTON,route('create-learning-record')],
-  ['session-attendance','출석 조정',BUTTON,route('fix-attendance')],
-  ['session-reports','보고서 일괄 전송',BUTTON,route('send-class-daily-reports')],
-  ['session-delete','삭제',AUTO,route('cascade-delete'),DELETE]]],
+  ['session-record','학습기록 생성',BUTTON,route('create-learning-record'),{note:'본문 속성은 학습기록 계획만 고릅니다(v2.7).'}],
+  ['session-attendance-queue','[웹훅] 출석 조정',AUTO,route('fix-attendance'),{path:'/queue',trigger:{when:'속성 편집',select:['출석 조정 상태','⚪ 대기']},note:'주소 끝의 /queue까지 넣습니다. [출석 조정] 버튼은 출석 조정 상태만 바꿉니다(v2.7).'}],
+  ['session-date-move','[웹훅] 수업 날짜 이동',AUTO,route('fix-attendance'),{path:'/session-date',trigger:{when:'수업일시 편집'},note:'주소 끝의 /session-date까지 넣습니다(v2.7).'}],
+  ['session-delete','[웹훅] 삭제',AUTO,route('cascade-delete'),DELETE]]],
  ['출석(학원)',[
-  ['attendance-record','학습기록 생성',BUTTON,route('create-learning-record')],
-  ['attendance-report','보고서 전송',BUTTON,route('send-daily-report')],
-  ['attendance-delete','삭제',AUTO,route('cascade-delete'),DELETE]]],
+  ['attendance-report-queue','[웹훅] 보고서 전송',AUTO,route('send-daily-report'),{path:'/queue',trigger:{when:'속성 편집',select:['보고서 전송 상태','⚪ 대기']},note:'주소 끝의 /queue까지 넣습니다. 출석 [보고서 전송]·수업 [보고서 일괄 전송] 버튼은 상태만 바꿉니다(v2.7).'}],
+  ['attendance-delete','[웹훅] 삭제',AUTO,route('cascade-delete'),DELETE]]],
  ['학습기록(학원)',[
-  ['record-assignment','학습활동 생성',BUTTON,route('create-assignment')],
+  ['record-assignment','학습활동 생성',BUTTON,route('create-assignment'),{path:'/queue',note:'주소 끝의 /queue까지 넣습니다. 본문 속성은 학습활동 계획만 고릅니다(v2.7).'}],
   ['record-units','단원 입력',BUTTON,route('fill-record-units')],
-  ['record-delete','삭제',AUTO,route('cascade-delete'),DELETE]]],
- ['학습활동(학원)',[['assignment-delete','삭제',AUTO,route('cascade-delete'),DELETE]]],
- ['보고서(학원)',[['report-send','보고서 전송',BUTTON,route('send-report')]]],
- ['알림톡 발송함(학원)',[['outbox-send','일괄 전송',BUTTON,route('send-selected-notifications')]]],
- ['수강료(학원)',[['tuition-notice','수강료 안내 발송',BUTTON,route('send-tuition-notice')]]],
+  ['record-delete','[웹훅] 삭제',AUTO,route('cascade-delete'),DELETE]]],
+ ['학습활동(학원)',[['assignment-delete','[웹훅] 삭제',AUTO,route('cascade-delete'),DELETE]]],
+ ['보고서(학원)',[['report-send','[웹훅] 보고서 전송',AUTO,route('send-report'),{path:'/queue',trigger:{when:'속성 편집',select:['보고서 전송 상태','⚪ 대기']},note:'주소 끝의 /queue까지 넣습니다. [보고서 전송] 버튼과 발송함 [일괄 전송]은 전송 상태만 바꿉니다(v2.7).'}]]],
+ ['알림톡 발송함(학원)',[['outbox-send','일괄 전송 (예전 방식)',BUTTON,route('send-selected-notifications'),{note:'v2.7부터 [일괄 전송]은 웹훅 없이 보고서·수강료의 전송 상태만 바꿉니다. 아직 예전 버튼(웹훅)을 쓰는 경우에만 키를 바꿉니다.'}]]],
+ ['수강료(학원)',[['tuition-notice','[웹훅] 안내문 전송',AUTO,route('send-tuition-notice'),{path:'/queue',trigger:{when:'속성 편집',select:['안내문 전송 상태','⚪ 대기']},note:'주소 끝의 /queue까지 넣습니다. [안내문 전송] 버튼과 발송함 [일괄 전송]은 전송 상태만 바꿉니다(v2.7).'}]]],
  ['교재비(학원)',[
-  ['cart-notice','안내문 전송',BUTTON,route('send-textbook-notice')],
-  ['cart-progress-book','진도교재 담기',BUTTON,route('sync-textbook-distribution'),{path:'/from-cart',note:'주소 끝의 /from-cart까지 넣습니다.'}],
-  ['cart-delete','삭제',AUTO,route('cascade-delete'),DELETE]]],
- ['교재배부(학원)',[['distribution-delete','삭제',AUTO,route('cascade-delete'),DELETE]]],
- ['교재결제(학원)',[['payment-delete','삭제',AUTO,route('cascade-delete'),DELETE]]],
+  ['cart-notice','[웹훅] 안내문 전송',AUTO,route('send-textbook-notice'),{path:'/queue',trigger:{when:'속성 편집',select:['안내문 전송 상태','⚪ 대기']},note:'주소 끝의 /queue까지 넣습니다. [안내문 전송] 버튼은 안내문 전송 상태만 바꿉니다(v2.7).'}],
+  ['cart-progress-book','진도교재 담기',BUTTON,route('sync-textbook-distribution'),{path:'/from-cart/queue',note:'주소 끝의 /from-cart/queue까지 넣습니다. 본문 속성은 담기 계획만 고릅니다(v2.7).'}],
+  ['cart-delete','[웹훅] 삭제',AUTO,route('cascade-delete'),DELETE]]],
+ ['교재배부(학원)',[['distribution-delete','[웹훅] 삭제',AUTO,route('cascade-delete'),DELETE]]],
+ ['교재결제(학원)',[['payment-delete','[웹훅] 삭제',AUTO,route('cascade-delete'),DELETE]]],
  ['학생(학원)',[
-  ['student-inquiry-auto','상담 신청 접수안내',AUTO,route('send-inquiry-receipt'),{trigger:{when:'페이지 추가',check:['개인정보 동의',true]}}],
-  ['student-inquiry','접수안내 직접 발송',BUTTON,route('send-inquiry-receipt'),{note:'관리자가 직접 입력한 학생에게 보낼 때 누릅니다.'}]]],
- ['시험정보(학원)',[['exam-scope','응시학생 등록',BUTTON,route('sync-exam-scope')]]],
+  ['student-inquiry-auto','[웹훅] 접수안내 전송',AUTO,route('send-inquiry-receipt'),{trigger:{when:'페이지 추가',check:['개인정보 동의',true]}}],
+  ['student-inquiry','접수안내 전송',BUTTON,route('send-inquiry-receipt'),{note:'관리자가 직접 입력한 학생에게 보낼 때 누릅니다.'}]]],
+ ['시험정보(학원)',[['exam-scope','응시학생 등록 (예전 방식)',BUTTON,route('sync-exam-scope'),{note:'v2.7부터 [응시학생 등록]은 웹훅 없이 학생의 응시 등록만 바꾸고 학생 DB 자동화가 성적을 만듭니다. 아직 예전 버튼(웹훅)을 쓰는 경우에만 키를 바꿉니다.'}]]],
  ['학교(학원)',[['school-calendar','학사일정 가져오기',BUTTON,route('sync-school-calendar')]]],
- ['대시보드(학원)',[['dashboard-link','날짜 변경 연결',AUTO,route('sync-dashboard-link'),{trigger:{when:'날짜 속성 편집'}}],
-  ['dashboard-link-new','새 대시보드 연결',AUTO,route('sync-dashboard-link'),{trigger:{when:'페이지 추가'}}]]],
- ['라이브러리(학원)',[['book-report-sync','교재 수정 반영',AUTO,route('sync-report-cache'),{trigger:{when:'속성 편집'}}],
-  ['book-report-sync-new','새 교재 반영',AUTO,route('sync-report-cache'),{trigger:{when:'페이지 추가'}}]]],
- ['일정(학원)',[['schedule-report-sync','일정 수정 반영',AUTO,route('sync-report-cache'),{trigger:{when:'속성 편집'}}],
-  ['schedule-report-sync-new','새 일정 반영',AUTO,route('sync-report-cache'),{trigger:{when:'페이지 추가'}}]]],
+ ['대시보드(학원)',[['dashboard-link','[웹훅] 대시보드 연결 · 날짜 편집',AUTO,route('sync-dashboard-link'),{trigger:{when:'날짜 속성 편집'}}],
+  ['dashboard-link-new','[웹훅] 대시보드 연결 · 페이지 추가',AUTO,route('sync-dashboard-link'),{trigger:{when:'페이지 추가'}}]]],
+ ['라이브러리(학원)',[['book-report-sync','[웹훅] 리포트 반영 · 속성 편집',AUTO,route('sync-report-cache'),{trigger:{when:'속성 편집'}}],
+  ['book-report-sync-new','[웹훅] 리포트 반영 · 페이지 추가',AUTO,route('sync-report-cache'),{trigger:{when:'페이지 추가'}}]]],
+ ['일정(학원)',[['schedule-report-sync','[웹훅] 리포트 반영 · 속성 편집',AUTO,route('sync-report-cache'),{trigger:{when:'속성 편집'}}],
+  ['schedule-report-sync-new','[웹훅] 리포트 반영 · 페이지 추가',AUTO,route('sync-report-cache'),{trigger:{when:'페이지 추가'}}]]],
 ];
 // Webhook routes with no Notion button or automation, so they are not checklist items:
 // sync-attendance and sync-class-room-copy (GitHub Actions manual runs; their GitHub Secret is noted below the checklist).
 const OUTSIDE_NOTION=[route('sync-attendance'),route('sync-class-room-copy')];
+// Old webhook routes still accepted for academies whose buttons are not updated yet. Their buttons became Notion-only
+// (시간표 설정·수업 생성·종료 처리·보고서 일괄 전송, v2.7), so they are not checklist items.
+const LEGACY_ONLY=[route('sync-registration-enroll'),route('sync-registration-class-session'),route('sync-registration-end'),route('send-class-daily-reports')];
 function route(name){return name;}
 // Notion database / "웹훅 등록" view links (normalized DB title -> {db, view}), cached on the server.
 let links=null,linksUpdated=null;
@@ -152,29 +150,24 @@ const DESC={
  'reg-link-disable':'"링크 비활성화"를 체크하면 학부모 리포트 링크가 열리지 않게 막습니다.',
  'reg-link-enable':'"링크 비활성화" 체크를 풀면 막았던 학부모 리포트 링크가 다시 열립니다.',
  'reg-report-sync':'이 학생의 학부모 리포트(출석·학습기록·교재·일정)를 최신 내용으로 다시 만듭니다. 학부모에게 보내지는 않습니다.',
- 'reg-textbook':'이 학생의 진도교재를 만듭니다. 그룹 진도 교재는 클래스의 반별교재에 연결하고, 개별 진도 교재는 이 학생용으로 만듭니다.',
- 'reg-enroll':'등록일이 비어 있으면 오늘로 채우고, 종료일이 있으면 지워 다시 수강 중으로 돌립니다. 시간표가 비어 있으면 클래스의 그룹 수업 시간표를 연결합니다(개별 수업은 직접 연결).',
- 'reg-session':'이미 만들어진 수업 중 등록 기간·시간표에 맞는 수업에 이 학생을 연결하고 빠진 출석을 만듭니다. 새 수업 일정을 만드는 버튼은 아니며, 다시 눌러도 중복되지 않습니다.',
- 'reg-end':'종료일 기준으로 그 뒤의 출석을 지우고, 수업·시간표 연결을 풀고, 쓰지 않는 교재를 정리합니다. 되돌리는 기능은 없습니다.',
+ 'reg-textbook-queue':'등록의 교재 생성 상태가 ⚪ 대기가 되면 이 학생의 진도교재를 큐에서 만듭니다. 그룹 진도 교재는 반별교재에 연결하고, 개별 진도 교재는 이 학생용으로 만듭니다. 클래스의 [교재 생성]도 학생마다 이 자동화로 처리됩니다.',
+ 'reg-end-cleanup':'[종료 처리] 버튼의 마지막 단계입니다. 시작하지 않은 교재(다음 교재이고 학습기록이 없는 것)를 정리합니다. 출석·수업 정리는 버튼과 출석 조정이 합니다. 되돌리는 기능은 없습니다.',
  'class-tuition':'클래스의 "수강료 생성 대상"에 연결한 발송함의 달을 기준으로, 그 달에 수강 중인 학생마다 수강료 건을 만듭니다. 이미 있으면 건너뜁니다.',
  'class-textbook-fee':'이 반에서 아직 교재비 페이지가 없는 학생마다 교재비 페이지를 만듭니다. 교재를 담지는 않으며, 교재는 각 교재비의 "진도교재 담기"로 담습니다.',
- 'class-textbook':'이 클래스의 수강 중인 학생마다 진도교재를 차례로 만들거나 맞춥니다.',
  'class-report-sync':'이 클래스 학생 중 리포트 링크가 있는 학생의 학부모 리포트를 최신 내용으로 다시 만듭니다. 학부모에게 보내지는 않습니다.',
  'class-report':'클래스의 "보고서 생성 대상"에 연결한 발송함의 구분(주간/월간)과 기간으로, 그 기간에 수강 중인 학생마다 보고서를 만들고 출석·학습기록·학습활동을 연결합니다. 이미 있으면 건너뜁니다.',
- 'timetable-classes':'이 시간표의 다음 수업 1회를 만들고, 이 시간표에 연결된 학생의 출석을 함께 만듭니다.',
- 'menu-bulk-classes':'모든 시간표의 수업을 아직 만들어지지 않은 주의 일요일까지 만들고 출석을 함께 만듭니다. 시간표를 하나씩 차례로 처리하며, 다시 눌러도 중복되지 않습니다.',
+ 'menu-bulk-classes':'기준일이 가장 이른 빈 주의 시간표마다 수업을 1개씩 큐에서 만들고, 출석은 이어서 출석 조정이 만듭니다. 다시 눌러도 중복되지 않습니다.',
  'session-record':'이 수업에 출석한 학생들의 학습기록을 만듭니다.',
- 'session-attendance':'이 수업 날짜에 수강 중인 학생 기준으로 출석을 맞춥니다. 빠진 출석은 연결하거나 만들고, 수강 기간이 아니거나 중복된 출석은 삭제 체크합니다.',
- 'session-reports':'이 수업에 출석한 학생들에게 일일 보고서를 한 명씩 차례로 보냅니다.',
- 'attendance-record':'이 출석의 학습기록을 만듭니다. 수업 없이 온 보강 출석이면 보강으로 표시합니다.',
- 'attendance-report':'이 학생의 일일 보고서를 학부모에게 보냅니다. 보내기 전에 리포트를 최신 내용으로 맞춥니다.',
- 'record-assignment':'이 학습기록의 대상 학생마다 학습활동(과제)을 만듭니다.',
+ 'session-attendance-queue':'출석 조정 상태가 ⚪ 대기가 되면 이 수업 명단 기준으로 출석을 맞춥니다. 빠진 출석은 연결하거나 만들고, 명단 밖·중복 출석은 삭제 체크합니다. 보강 수업은 합치기만 하고 지우지 않습니다.',
+ 'session-date-move':'수업 날짜를 옮기면 그 수업의 출석 날짜를 맞추고, 학습기록·학습활동 제목의 날짜를 바꿉니다. 출석 이름은 출석의 이름 자동화가 바꿉니다.',
+ 'attendance-report-queue':'보고서 전송 상태가 ⚪ 대기가 되면 일일 보고서를 큐에서 한 명씩 보냅니다. 보내기 전에 리포트를 최신 내용으로 맞추고, 이미 보낸 학생은 다시 보내지 않습니다.',
+ 'record-assignment':'버튼을 누르면 수식 학습활동 계획대로 출석마다 학습활동을 큐에서 만듭니다. 과제는 그 학생의 다음 출석을 마감으로 넣고, 이미 만든 학생은 다시 만들지 않습니다.',
  'record-units':'지금 범위(쉼표로 여러 구간)로 교재 단원을 찾아 단원을 새로 채웁니다. 범위를 정한 뒤 누릅니다.',
- 'report-send':'이 보고서(주간 또는 월간)를 학부모에게 알림톡으로 보냅니다.',
- 'outbox-send':'이 발송함의 구분(주간·월간 보고서 또는 수강료)에 맞는 건 중 "일괄전송 선택"이 체크된 건을 이름순으로 10건씩 차례로 보냅니다. 건수가 많아도 다시 누르지 않고 기다립니다.',
- 'tuition-notice':'이 수강료 안내를 학부모에게 알림톡으로 보냅니다.',
- 'cart-notice':'이 학생의 미납 교재 안내문을 학부모에게 알림톡으로 보냅니다.',
- 'cart-progress-book':'이 학생의 진도교재 중 "진행 중"인 교재만 모아 교재배부를 한 번에 만듭니다. "다음 교재"는 제외합니다.',
+ 'report-send':'보고서 전송 상태가 ⚪ 대기가 되면 이 보고서(주간 또는 월간)를 큐에서 한 건씩 보냅니다. 보내기 전에 리포트를 최신 내용으로 맞추고, 이미 보낸 건은 다시 보내지 않습니다. 발송함 [일괄 전송]도 이 자동화로 처리됩니다.',
+ 'outbox-send':'(예전 방식) 이 발송함의 일괄전송 선택이 체크된 건을 10건씩 차례로 보냅니다. v2.7 버튼으로 바꾸면 이 웹훅은 쓰지 않습니다.',
+ 'tuition-notice':'안내문 전송 상태가 ⚪ 대기가 되면 이 수강료 안내를 큐에서 보냅니다. 이미 보낸 건은 다시 보내지 않습니다. 발송함 [일괄 전송]도 이 자동화로 처리됩니다.',
+ 'cart-notice':'안내문 전송 상태가 ⚪ 대기가 되면 이 학생의 미납 교재 안내문을 큐에서 보냅니다. 이미 보낸 건은 다시 보내지 않습니다.',
+ 'cart-progress-book':'수식 담기 계획대로 이 학생의 "진행 중" 진도교재 중 아직 배부하지 않은 교재의 교재배부를 큐에서 만듭니다. "다음 교재"와 이미 배부한 교재는 제외합니다.',
  'student-inquiry-auto':'상담 신청서로 학생이 추가되고 개인정보 동의가 체크돼 있으면, 선택한 우선 연락 대상에게 접수안내를 자동으로 보냅니다.',
  'student-inquiry':'관리자가 직접 입력한 학생에게 같은 접수안내를 보냅니다. 개인정보 동의를 확인한 뒤 누릅니다.',
  'exam-scope':'시험과 같은 학년(학교를 지정했으면 같은 학교)이면서 등록 중인 학생 중 아직 성적 행이 없는 학생의 성적 행을 만듭니다. 이미 입력한 점수는 그대로 둡니다.',
@@ -201,6 +194,11 @@ function describe(extra){
   const row=el('div','trigger');row.append(el('span','trigger-label','트리거'));
   // Event chips carry a Feather icon: plus for 페이지 추가, edit-2 for 속성 편집.
   if(t.when)for(const w of t.when.split(' · ')){const c=el('span','trig');const g=el('span','trig-glyph');g.innerHTML=TRIG_ICONS[w]||TRIG_ICONS.edit;c.append(g,w);row.append(c);}
+  if(t.select){
+   // Select condition, e.g. "조건 [교재 생성 상태 ⚪ 대기]" — the value sits inside the chip like the checkbox state.
+   const [prop,value]=t.select;if(t.when)row.append(el('span','trigger-label','조건'));
+   const chip=el('span','trig');chip.append(prop,el('span','trigger-state',value));row.append(chip);
+  }
   if(t.check){
    const [prop,on]=t.check;if(t.when)row.append(el('span','trigger-label','조건'));
    // The state sits inside the chip so "체크됨" never ends up alone on a line.

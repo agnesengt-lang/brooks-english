@@ -47,7 +47,11 @@ const FETCH_TIMEOUT_MS = 12_000
 // 아님, 오히려 어느 요청인지 구분하는 데 필요), 매 재시도 시점에 "어떤 요청을, 몇 번째 시도에서,
 // 왜, 얼마나 기다리고 재시도하는지"를 남긴다. 이 함수는 전 함수가 공용으로 쓰므로 여기 한 곳만
 // 고치면 generate-classes뿐 아니라 모든 함수에 자동 적용된다.
-export async function fetchWithRetry(url: string, init: RequestInit, maxRetries = 5): Promise<Response> {
+// (v2.6.13) retryAmbiguous=false: 429(요청을 처리하지 않았다는 뜻)만 다시 보낸다. 5xx·시간 초과·연결 끊김은 Notion이
+// 이미 처리했을 수 있어 다시 보내지 않는다 — 페이지 만들기(POST)를 다시 보내면 같은 페이지가 두 번 생긴다
+// (2026-10-16 메뉴 일괄 생성에서 출석 1건이 9초 차로 두 번 생긴 원인). 읽기·고치기는 여러 번 보내도 결과가 같아 기본값(true).
+export async function fetchWithRetry(url: string, init: RequestInit, maxRetries = 5, opts: { retryAmbiguous?: boolean } = {}): Promise<Response> {
+	const retryAmbiguous = opts.retryAmbiguous ?? true
 	const callStartedAt = Date.now()
 	let lastRes: Response | undefined
 	let lastErr: Error | undefined
@@ -66,7 +70,7 @@ export async function fetchWithRetry(url: string, init: RequestInit, maxRetries 
 			}
 			lastRes = res
 			lastErr = undefined
-			if (attempt === maxRetries) return res
+			if (attempt === maxRetries || (!retryAmbiguous && res.status !== 429)) return res
 			const retryAfterHeader = res.headers.get("Retry-After")
 			const retryAfterMs = retryAfterHeader ? Number(retryAfterHeader) * 1000 : NaN
 			const backoffMs = Number.isFinite(retryAfterMs) ? retryAfterMs : 300 * Math.pow(2, attempt)
@@ -80,6 +84,7 @@ export async function fetchWithRetry(url: string, init: RequestInit, maxRetries 
 			// (호출자는 이미 전부 이 예외를 자기 catch->markError 경로로 처리하도록 되어 있어 안전하다).
 			lastErr = err as Error
 			lastRes = undefined
+			if (!retryAmbiguous) throw new Error(`Notion API 요청 결과를 알 수 없어 다시 보내지 않음(이미 처리됐을 수 있음): ${lastErr.message}: ${url}`)
 			if (attempt === maxRetries) {
 				throw new Error(
 					`Notion API 요청이 ${maxRetries + 1}번 시도 후에도 실패함 (마지막 원인: ${lastErr.message}, 누적 ${Date.now() - callStartedAt}ms): ${url}`,
@@ -141,16 +146,113 @@ export async function withTimeout<T>(promise: Promise<T>, ms: number, label: str
 	}
 }
 
+// ---------- (v2.7) 속성 이름 규칙: 새 이름 ↔ 예전 이름 ----------
+// docs/이름-규칙.md에 맞춰 바꾼 속성. 코드는 새 이름만 쓰고, 아직 이름을 바꾸지 않은 운영 Notion도 그대로 돈다.
+//  - 읽기: 페이지·조회 결과에 예전 이름만 있으면 같은 값을 새 이름으로도 넣는다(normalizeProps).
+//  - 쓰기·조회: Notion이 "그런 속성이 없다"(400)고 하면 그 이름만 예전 이름으로 바꿔 다시 보낸다(이름이 맞으면 추가 호출 없음).
+export const PROP_ALIASES: Record<string, string[]> = {
+	"교재 생성 상태": ["교재 상태"],
+	"교재 생성 시작 시각": ["교재 처리 시작 시각"],
+	"출석 조정 상태": ["출석조정 상태"],
+	"출석 조정 시작 시각": ["출석조정 처리 시작 시각"],
+	"학습기록 생성 상태": ["학습기록 상태"],
+	"학습기록 생성 시작 시각": ["학습기록 처리 시작 시각"],
+	"학습활동 생성 상태": ["활동 생성 상태"],
+	"학습활동 생성 시작 시각": ["활동 생성 시작 시각"],
+	"진도교재 담기 상태": ["담기 상태"],
+	"진도교재 담기 시작 시각": ["담기 처리 시작 시각"],
+	"보고서 전송 상태": ["전송 상태"],
+	"안내문 전송 상태": ["전송 상태"],
+	"접수안내 전송 상태": ["접수안내 상태"],
+	"학사일정 가져오기 상태": ["학사일정 처리 상태"],
+	"수업 추가 정보": ["수업추가 정보"],
+}
+
+// 속성 묶음에서 이름으로 값을 꺼낸다(새 이름이 없으면 예전 이름).
+export function pickProp(props: any, name: string): any {
+	if (!props) return undefined
+	if (props[name] !== undefined) return props[name]
+	for (const old of PROP_ALIASES[name] ?? []) if (props[old] !== undefined) return props[old]
+	return undefined
+}
+
+// 페이지 객체의 예전 이름 속성을 새 이름으로도 보이게 한다(제자리 수정, 같은 객체를 돌려줌).
+export function normalizeProps<T>(page: T): T {
+	const props = (page as any)?.properties
+	if (!props || typeof props !== "object") return page
+	for (const [name, olds] of Object.entries(PROP_ALIASES)) {
+		if (props[name] !== undefined) continue
+		const old = olds.find((o) => props[o] !== undefined)
+		if (old) props[name] = props[old]
+	}
+	return page
+}
+
+// 400 오류 글에 나온 속성 이름 중 대응표에 있는 것을 하나 골라 예전 이름으로 바꾼 속성 묶음을 돌려준다(없으면 null).
+export function aliasRetryProps(properties: Record<string, unknown>, errorText: string): Record<string, unknown> | null {
+	for (const key of Object.keys(properties)) {
+		const olds = PROP_ALIASES[key]
+		if (!olds || !errorText.includes(key)) continue
+		const old = olds.find((o) => !(o in properties))
+		if (!old) continue
+		const next: Record<string, unknown> = {}
+		for (const [k, v] of Object.entries(properties)) next[k === key ? old : k] = v
+		return next
+	}
+	return null
+}
+
+function aliasRetryQuery(body: Record<string, unknown>, errorText: string): Record<string, unknown> | null {
+	let json = JSON.stringify(body)
+	for (const [name, olds] of Object.entries(PROP_ALIASES)) {
+		const needle = JSON.stringify({ property: name }).slice(1, -1)
+		if (!errorText.includes(name) || !json.includes(needle)) continue
+		json = json.split(needle).join(JSON.stringify({ property: olds[0] }).slice(1, -1))
+		return JSON.parse(json)
+	}
+	return null
+}
+
+// 쓰기 요청을 보내고, 없는 속성 이름 오류면 예전 이름으로 바꿔 최대 4번까지 다시 보낸다.
+export async function sendWithPropAliases(
+	properties: Record<string, unknown> | undefined,
+	send: (props: Record<string, unknown> | undefined) => Promise<Response>,
+): Promise<Response> {
+	let props = properties
+	let res = await send(props)
+	for (let i = 0; i < 4 && res.status === 400 && props; i++) {
+		const text = await res.clone().text()
+		const next = aliasRetryProps(props, text)
+		if (!next) break
+		props = next
+		res = await send(props)
+	}
+	return res
+}
+
 export async function queryDataSource(dataSourceId: string, body: Record<string, unknown>) {
-	const res = await fetchWithRetry(`${NOTION_API}/data_sources/${dataSourceId}/query`, {
+	let req = body
+	let res = await fetchWithRetry(`${NOTION_API}/data_sources/${dataSourceId}/query`, {
 		method: "POST",
 		headers: notionHeaders(),
-		body: JSON.stringify(body),
+		body: JSON.stringify(req),
 	})
+	for (let i = 0; i < 4 && res.status === 400; i++) {
+		const next = aliasRetryQuery(req, await res.clone().text())
+		if (!next) break
+		req = next
+		res = await fetchWithRetry(`${NOTION_API}/data_sources/${dataSourceId}/query`, {
+			method: "POST",
+			headers: notionHeaders(),
+			body: JSON.stringify(req),
+		})
+	}
 	if (!res.ok) {
 		throw new Error(`query ${dataSourceId} failed: ${res.status} ${await res.text()}`)
 	}
-	return res.json()
+	const data = await res.json()
+	for (const p of data?.results ?? []) normalizeProps(p)
+	return data
 }
 
 // 필터에 맞는 모든 페이지를 커서를 따라가며 끝까지 모아서 반환한다 (cascade-delete, fix-attendance 등에서 공용으로 사용).
@@ -191,7 +293,7 @@ export async function getPage(pageId: string) {
 	if (!res.ok) {
 		throw new Error(`get page ${pageId} failed: ${res.status} ${await res.text()}`)
 	}
-	return res.json()
+	return normalizeProps(await res.json())
 }
 
 // Notion 업로드 파일 URL은 만료되므로, 학부모가 파일을 여는 순간 블록을 다시 조회해
@@ -231,11 +333,11 @@ export async function getBlockChildren(blockId: string): Promise<any[]> {
 }
 
 export async function updatePageProperties(pageId: string, properties: Record<string, unknown>) {
-	const res = await fetchWithRetry(`${NOTION_API}/pages/${pageId}`, {
+	const res = await sendWithPropAliases(properties, (props) => fetchWithRetry(`${NOTION_API}/pages/${pageId}`, {
 		method: "PATCH",
 		headers: notionHeaders(),
-		body: JSON.stringify({ properties }),
-	})
+		body: JSON.stringify({ properties: props }),
+	}))
 	if (!res.ok) {
 		throw new Error(`update page ${pageId} failed: ${res.status} ${await res.text()}`)
 	}
@@ -243,23 +345,25 @@ export async function updatePageProperties(pageId: string, properties: Record<st
 }
 
 export async function createPage(dataSourceId: string, properties: Record<string, unknown>) {
-	const res = await fetchWithRetry(`${NOTION_API}/pages`, {
+	// 400(속성 이름 오류)은 Notion이 페이지를 만들지 않은 경우라 예전 이름으로 다시 보내도 두 번 생기지 않는다.
+	const res = await sendWithPropAliases(properties, (props) => fetchWithRetry(`${NOTION_API}/pages`, {
 		method: "POST",
 		headers: notionHeaders(),
-		body: JSON.stringify({ parent: { data_source_id: dataSourceId }, properties }),
-	})
+		body: JSON.stringify({ parent: { data_source_id: dataSourceId }, properties: props }),
+	}, 5, { retryAmbiguous: false }))
 	if (!res.ok) {
 		throw new Error(`create page in ${dataSourceId} failed: ${res.status} ${await res.text()}`)
 	}
 	return res.json()
 }
 
-export async function archivePage(pageId: string) {
-	const res = await fetchWithRetry(`${NOTION_API}/pages/${pageId}`, {
+// (v2.6.31) properties를 주면 휴지통으로 보내면서 그 속성도 한 번에 쓴다(상태 ✅ 완료 쓰기 1번을 줄임).
+export async function archivePage(pageId: string, properties?: Record<string, unknown>) {
+	const res = await sendWithPropAliases(properties, (props) => fetchWithRetry(`${NOTION_API}/pages/${pageId}`, {
 		method: "PATCH",
 		headers: notionHeaders(),
-		body: JSON.stringify({ archived: true }),
-	})
+		body: JSON.stringify(props ? { properties: props, archived: true } : { archived: true }),
+	}))
 	if (!res.ok) {
 		const text = await res.text()
 		// 이미 archived된 페이지를 다시 archive하려고 하면 Notion이 400 validation_error를 준다.
@@ -429,9 +533,38 @@ export async function setCombinedSyncStatus(
 	await updateStatusWithRetry(pageId, properties, "success")
 }
 
+// (v2.6.32) 페이지 읽기와 DB 조회는 관계를 25개까지만 주고 has_more로 잘렸음을 알린다. 그 목록을 고쳐 다시 쓰면
+// 26번째부터가 지워지므로, 잘렸을 때만 속성 항목 API로 끝까지 읽는다(25개 이하면 호출이 늘지 않음).
+export async function fullRelationIds(page: any, propName: string): Promise<string[]> {
+	const prop = page?.properties?.[propName]
+	if (!prop?.has_more || !prop?.id || !page?.id) return relIds(prop)
+	const out: string[] = []
+	let cursor: string | undefined
+	do {
+		const qs = `page_size=100${cursor ? `&start_cursor=${encodeURIComponent(cursor)}` : ""}`
+		const res = await fetchWithRetry(`${NOTION_API}/pages/${page.id}/properties/${encodeURIComponent(prop.id)}?${qs}`, { method: "GET", headers: notionHeaders() })
+		if (!res.ok) throw new Error(`relation ${propName} of ${page.id} read failed: ${res.status} ${await res.text()}`)
+		const data = await res.json()
+		for (const r of data.results ?? []) if (r?.relation?.id) out.push(r.relation.id)
+		cursor = data.has_more ? data.next_cursor : undefined
+	} while (cursor)
+	return out
+}
+
+// 지정한 관계 속성들을 끝까지 채운 복사본(잘리지 않았으면 그대로).
+export async function withFullRelations(page: any, propNames: string[]): Promise<any> {
+	if (!propNames.some((n) => page?.properties?.[n]?.has_more)) return page
+	const properties = { ...page.properties }
+	for (const n of propNames) {
+		if (!properties[n]?.has_more) continue
+		properties[n] = { ...properties[n], relation: (await fullRelationIds(page, n)).map((id) => ({ id })), has_more: false }
+	}
+	return { ...page, properties }
+}
+
 export async function addRelation(pageId: string, propName: string, addIds: string[]) {
 	const page = await getPage(pageId)
-	const existing = relationIds(page, propName)
+	const existing = await fullRelationIds(page, propName)
 	const merged = Array.from(new Set([...existing, ...addIds]))
 	if (merged.length === existing.length) return
 	await updatePageProperties(pageId, { [propName]: { relation: merged.map((id) => ({ id })) } })
@@ -486,4 +619,13 @@ export function extractPageId(body: unknown): string | null {
 		}
 	}
 	return null
+}
+
+// 로그용 본문 요약(v2.6.10): 페이지 id와 최상위·data 키 이름만. 값은 남기지 않는다 — Notion 자동화 본문에는
+// 연락처·리포트 토큰 같은 속성이, 예전 버튼 본문에는 adminKey가 들어 있을 수 있다.
+export function describeBody(body: unknown): string {
+	if (typeof body !== "object" || body === null) return "(본문 없음)"
+	const obj = body as Record<string, unknown>
+	const data = typeof obj.data === "object" && obj.data !== null ? Object.keys(obj.data as Record<string, unknown>) : []
+	return `pageId=${extractPageId(body) ?? "(없음)"} keys=[${Object.keys(obj).join(",")}]${data.length ? ` data=[${data.join(",")}]` : ""}`
 }
