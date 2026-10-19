@@ -265,3 +265,16 @@ v2.6.9 적용을 끝으로 origin(`hada-notion/project1`) main 고정 커밋 `bf
 - **시스템 정보 갱신**: Notion "시스템 정보" 페이지 "환경별 값" 섹션에 `배포 담당자 지원 종료일: 2026-11-19` 필드 추가 완료.
 - **매뉴얼**: `docs/updates/v2.7.6-8-운영-반영.md` 신규 작성(1단계 운영 AI 완료 사항 / 2단계 원본 지원 완료 사항 / 3단계 남은 결정·원장님 남은 일, 3단계 구성).
 - **적용 주체**: 원본 지원(화면 작업 전체, 재스캔) + 브룩스 AI(헤더 2건, 첫 탭 확인, 열 순서 커넥터 한계 확인 및 인계, 문서화) + 원장님(웹훅 키 입력, 라이브러리 단원 입력 등 남은 일 예정).
+
+
+## v2.7.9 — 2026-10-19 (코드 전용, AI 자동 패치)
+
+- **원본 기준**: `hada-notion/project1` main, `CHANGELOG.md`/`docs/updates/v2.7.9.md` 기준. Notion·Secrets·마이그레이션 변경 없음 — 코드 전용 패치.
+- **요약**: 키오스크 체크인(`kiosk-checkin`) Edge Function에서, 출석 `클래스`가 (등록 경유) 롤업이라 직접 관계가 아닌 경우 워크인/보강 출석 생성 시 `클래스` 속성 때문에 400 오류로 거부되던 문제를 수정. `클래스` 관련 오류(400, 메시지에 `클래스` 포함)가 나면 `클래스` 속성을 빼고 한 번 더 재시도하도록 변경.
+- **항목 1 (AI 자동, 완료)**: origin 최종본 기준으로 3개 파일 반영.
+  - `supabase/functions/_shared/kioskPolicy.ts`: `walkInAttendanceProperties`(includeClass 옵션으로 속성 객체 생성)·`isClassPropertyError`(400 + `클래스` 메시지 판별) 함수 추가.
+  - `supabase/functions/_shared/kioskPolicy_test.ts`: 신규 테스트 2건 추가(반영 확인).
+  - `supabase/functions/kiosk-checkin/index.ts`: 워크인/보강 출석 생성 로직을 `walkInAttendanceProperties({ ...includeClass: true })` 호출 + try/catch로 바꾸고, `isClassPropertyError`면 `includeClass: false`로 재시도하도록 교체.
+  - 반영 전 로컬 diff로 origin 최종본과 1바이트 단위까지 일치 확인 후 커밋(`4ecb16ada1f6cf019411aaa670d7ecbef261e165`, main) — GitHub 파일 SHA가 origin과 동일함도 재확인.
+- **배포(AI 자동, 완료)**: Supabase MCP `deploy_edge_function`으로 `kiosk-checkin` 재배포(기존 배포본의 공용 파일 15개는 그대로 유지하고 `index.ts`·`kioskPolicy.ts` 2개만 교체) — 버전 33 → 34, 상태 ACTIVE. 배포 후 관리자 키 없이 호출해 401(정상, 인증 필요라 거부됨 — 500/오류 아님)로 정상 응답함을 확인.
+- **적용 주체**: 운영 AI(소유자 승인 "진행시켜" 후 코드 반영·배포·점검 전체 완료). 운영자 직접/원본 지원 필요 항목 없음.
