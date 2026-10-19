@@ -44,8 +44,8 @@ Deno.test("계획 적용: 새 출석(학습기록 포함)·미연결 출석 연�
  const log: string[] = []
  await target.applyFixPlan(session, { v: 1, day: "2026-10-15", add: [{ reg: R1, rec: [REC] }, { reg: R2, att: A1 }], del: [A2], roster: [R1, R2] }, log, { "출석 조정 상태": { select: { name: "✅ 완료" } } })
  const c = m.created[0].properties
- assert(m.created.length === 1 && ids(c, "등록") === R1 && ids(c, "수업") === S && ids(c, "학습기록") === REC && ids(c, "클래스") === CLS && ids(c, "담당강사") === T && c["출석"].title[0].text.content === "2026-10-15 출석")
- const link = m.writes.find((w) => w.id === A1)!; assert(ids(link.body.properties, "수업") === S && ids(link.body.properties, "클래스") === CLS)
+ assert(m.created.length === 1 && ids(c, "등록") === R1 && ids(c, "수업") === S && ids(c, "학습기록") === REC && !c["클래스"] && ids(c, "담당강사") === T && c["출석"].title[0].text.content === "2026-10-15 출석")
+ const link = m.writes.find((w) => w.id === A1)!; assert(ids(link.body.properties, "수업") === S && !link.body.properties["클래스"])
  const del = m.writes.find((w) => w.id === A2)!; assert(del.body.properties["삭제 체크"].checkbox === true && !("삭제" in del.body.properties), "uses 삭제 체크")
  const sw = m.writes.filter((w) => w.id === S); assert(sw.length === 1 && ids(sw[0].body.properties, "등록") === `${R1},${R2}` && sw[0].body.properties["출석 조정 상태"].select.name === "✅ 완료")
  // Notion 읽기 없음(과제 마감 확인 조회만): 페이지 GET 없음

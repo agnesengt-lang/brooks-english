@@ -126,7 +126,7 @@ export async function fixAttendanceForClassSession(
     return
   }
   const timetableId = timetableIds[0]
-  const classId = classIds[0]
+  // (v2.7.10) classId는 더 이상 출석에 직접 쓰지 않는다 (클래스가 등록 경유 롤업으로 전환됨).
   const startIso: string = dateProp.start
   const endIso: string = dateProp.end ?? dateProp.start
   const dateStr = startIso.slice(0, 10)
@@ -231,7 +231,8 @@ export async function fixAttendanceForClassSession(
       const candidate = unlinkedCandidates[0]
       await updatePageProperties(candidate.id, {
         수업: { relation: [{ id: classSessionId }] },
-        클래스: { relation: [{ id: classId }] },
+        // (v2.7.10) 출석.클래스는 더 이상 직접 쓰지 않는다 — 등록을 경유하는 롤업으로 전환했다.
+        // 아래 등록 relation만 설정하면 클래스는 자동으로 계산된다.
         // 2026-09-16 버그 수정: 기존 미연결 출석을 새로 연결할 때도 담당강사를 채운다.
         ...(teacherIds.length ? { 담당강사: { relation: teacherIds.map((id) => ({ id })) } } : {}),
         ...backfill,
@@ -243,7 +244,7 @@ export async function fixAttendanceForClassSession(
         출석: { title: [{ text: { content: `${dateStr} 출석` } }] },
         수업일시: { date: { start: startIso, end: endIso } },
         수업: { relation: [{ id: classSessionId }] },
-        클래스: { relation: [{ id: classId }] },
+        // (v2.7.10) 출석.클래스는 등록을 경유하는 롤업으로 전환되어 더 이상 직접 쓰지 않는다.
         등록: { relation: [{ id: regId }] },
         // 2026-09-16 버그 수정: 수업의 담당강사를 새로 만드는 출석에도 함께 복사한다.
         ...(teacherIds.length ? { 담당강사: { relation: teacherIds.map((id) => ({ id })) } } : {}),
@@ -392,8 +393,7 @@ export async function applyFixPlan(session: FixSession, plan: FixPlan, log: stri
 		throw new Error(`다녀야 할 학생이 0명인데 출석 ${del.length}건을 지우라는 계산이 나왔어요. "출석 조정 정보" 수식을 확인해 주세요. 반 학생이 모두 종료됐다면 출석은 직접 정리해 주세요.`)
 	}
 	const day = plan.day ?? session.start.slice(0, 10)
-	const classId = session.classIds[0]
-	const classRel = classId ? { 클래스: { relation: [{ id: classId }] } } : {}
+	// (v2.7.10) 출석.클래스는 등록을 경유하는 롤업으로 전환되어 더 이상 직접 쓰지 않는다.
 	const teacher = session.teacherIds.length ? { 담당강사: { relation: session.teacherIds.map((id) => ({ id })) } } : {}
 
 	// 1) 출석이 없는 등록: 같은 날 수업 없는 출석이 있으면 연결, 없으면 새로 만든다(이 수업 학습기록·대기 과제 백필도 함께).
@@ -402,14 +402,15 @@ export async function applyFixPlan(session: FixSession, plan: FixPlan, log: stri
 	for (const a of plan.add) {
 		const backfill = backfillProps(deadlines.get(normId(a.reg)))
 		if (a.att) {
-			await updatePageProperties(a.att, { 수업: { relation: [{ id: session.id }] }, ...classRel, ...teacher, ...backfill })
+			// (v2.7.10) 클래스는 등록 경유 롤업이라 더 이상 직접 쓰지 않는다.
+			await updatePageProperties(a.att, { 수업: { relation: [{ id: session.id }] }, ...teacher, ...backfill })
 			log.push(`[linked] ${session.id}: attendance ${a.att} -> reg ${a.reg}`)
 		} else {
 			await createPage(DS_ATTENDANCE, {
 				출석: { title: [{ text: { content: `${day} ${makeup ? "보강" : "출석"}` } }] },
 				수업일시: { date: { start: session.start, end: session.end ?? session.start } },
 				수업: { relation: [{ id: session.id }] },
-				...classRel,
+				// (v2.7.10) 클래스는 등록 경유 롤업이라 더 이상 직접 쓰지 않는다.
 				...(makeup ? { "출석 상태": { select: { name: "🔵 보강" } } } : {}),
 				등록: { relation: [{ id: a.reg }] },
 				...(a.rec?.length ? { 학습기록: { relation: a.rec.map((id) => ({ id })) } } : {}),
