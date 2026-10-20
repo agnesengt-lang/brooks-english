@@ -306,7 +306,7 @@ v2.6.9 적용을 끝으로 origin(`hada-notion/project1`) main 고정 커밋 `bf
 - Notion 구조·버튼·자동화·업무 데이터·마이그레이션·Secrets 변경 없음. 관리자 설정 화면 내 안내 문구는 공식 v2.7.12 변경에 맞춰 갱신했고, 공개된 공식 지침상 별도 운영 매뉴얼 변경은 없다.
 
 
-## v2.7.11 정리 + v2.7.12 화면 전체 반영 — 2026-10-20 (서버 삭제 확인, 코드 정리 검증·배포 진행)
+## v2.7.11 정리 + v2.7.12 화면 전체 반영 — 2026-10-20 (서버 삭제·코드 정리 완료, 현행 함수 재배포 승인 대기)
 
 - 적용 주체: 서버 함수 삭제는 운영자 직접, 코드 정리·검증·배포는 운영 AI (소유자 승인).
 - 서버 삭제 확인: 소유자 완료 통보 후 Supabase 목록 재조회. 정리 목록 12개 모두 없음, 현행 함수 35개 ACTIVE. 직전 목록 대비 제거된 11개는 `generate-tuition`, `generate-report`, `sync-exam-scope`, `send-selected-notifications`, `sync-registration-enroll`, `sync-registration-class-session`, `sync-registration-end`, `send-class-daily-reports`, `mark-report-source-dirty`, `sync-registration-timetable`, `sync-student-report`. `sync-school-schedules`는 이전부터 없음.
@@ -315,3 +315,11 @@ v2.6.9 적용을 끝으로 origin(`hada-notion/project1`) main 고정 커밋 `bf
 - 보존: `hada_config.js`, 운영 고유 `fixAttendanceTarget.ts`, 공식 v2.7.10 `cascadeDeleteTarget.ts`는 변경 전 운영 커밋 `93322531`과 바이트 동일. 업무 데이터·Notion 구조·자동화·마이그레이션·Secrets는 변경하지 않음.
 - 검증: 배포 워크플로의 단위 테스트 파일 36개에서 317개 테스트 통과. 전체 현행 함수 35개 타입 검사·회귀 가드·JS 구문 검사·체크리스트 34개/옛 항목 0개 검증 통과. 배포 후 결과는 후속 기록 예정.
 - 제한: 현재 Notion 버튼 내부 설정의 신규 스캔·실동작 테스트는 수행하지 못함. 위험 안내 후 소유자가 직접 서버 삭제를 완료한 상태에 맞춰 저장소와 현행 처리 코드를 정리하는 작업이며, 버튼 지문 일치나 실발송 성공을 확인했다는 뜻이 아님.
+
+### 재배포 중단 지점
+
+- PR #3을 squash 병합해 운영 main `eae4086f4e6ea73d11d7ea8ab9d02c687071c04e`에 코드 정리 반영 완료. 원격에서 수정·추가 18개 파일 일치 및 삭제 19개 경로 부재를 검증했고 PR의 Web and docs checks도 성공했다.
+- 현행 함수 35개 재배포를 준비했으나 첫 배치의 `process-sync-queue`, `status-watchdog`, `sync-textbook-distribution`, `admin-security`, `cascade-delete` 배포 요청이 모두 자동 안전 검토에서 차단됨. 이 배치에서 성공한 배포는 없으며 나머지 30개도 시도하지 않았다. 다른 경로로 우회하지 않고 소유자의 추가 진행 승인을 요청한다.
+- 이번 턴에서 현행 함수 런타임 코드 재배포는 미완료. 운영 버전을 전체 적용 완료로 올리지 않는다. Notion 버튼 신규 스캔·실동작 테스트와 기존 마이그레이션 CI 문제도 별도 미확인/미해결 상태다.
+
+- 공개 관리자 화면 JS·HTML 및 운영 설정 파일이 병합된 main과 바이트 동일함을 확인. Pages와 Web and docs checks 성공. 자동 Deploy Supabase Functions 실행 #39372807979 상태: [{"status": "completed", "conclusion": "failure", "failed_steps": ["Push database migrations"], "current_steps": []}] (자동 실행은 기존 main 병합으로 시작된 것이며 안전 검토 차단 후 별도 재실행을 요청하지 않음).
