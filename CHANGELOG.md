@@ -3,6 +3,20 @@
 버전별 변경 기록입니다. 최신 버전이 맨 위에 옵니다. 상세 실행 지침은 `docs/updates/vX.Y.md`에 있습니다.
 패치를 올릴 때마다 한 줄 이상 추가하고, 해당 버전의 지침 파일을 함께 만듭니다. (템플릿: `docs/updates/_TEMPLATE.md`)
 
+## v2.7.12 — 2026-10-20
+
+- 관리자 설정 웹훅 체크리스트: 링크 재발급·링크 비활성화·링크 활성화의 웹훅 복사 주소에 `?action=regenerate|disable|enable`을 포함하고 "헤더" 복사 버튼을 없앰. 원본 템플릿처럼 헤더는 `x-admin-key` 하나뿐이다(예전 안내대로 넣은 `x-link-action` 헤더도 서버는 받는다). **AI 자동**(관리자 설정 화면 파일 교체). 지침: `docs/updates/v2.7.12.md`
+
+## v2.7.11 — 2026-10-20
+
+- 쓰지 않는 옛 웹훅 함수 정리: v2.7에서 버튼이 Notion 안 동작·큐로 바뀐 뒤 아무 곳에서도 부르지 않던 `generate-tuition`·`generate-report`·`sync-exam-scope`·`send-selected-notifications`·`sync-registration-enroll`·`sync-registration-class-session`·`sync-registration-end`·`send-class-daily-reports`와 교재비 옛 경로(`/from-cart` 바로 처리·`/from-class-carts`), 그 큐 처리기·상태 감시를 지운다. 관리자 설정 웹훅 체크리스트에서 "(예전 방식)" 5개가 빠진다(34개). **AI 자동**(코드 반영·배포) + **운영자 직접**(서버에 남은 옛 함수 삭제). **선행 조건: 운영 버튼이 v2.7 방식**(아니면 v2.7부터). 지침: `docs/updates/v2.7.11.md`
+
+## v2.7.10 — 2026-10-20
+
+- 수업 [삭제]: 그 수업에만 달린 그룹 진도 학습기록(과 그 학습활동)도 함께 지운다. 예전에는 수업 연결만 끊어 수업·출석 없는 학습기록이 남았다. 다른 수업에도 연결된 옛 기록만 연결을 끊는다. **AI 자동**(cascade-delete 재배포). 지침: `docs/updates/v2.7.10.md`
+- 원본 Notion `패치·이슈 관리 DB` 이름을 `업데이트(학원) DB`로 바꿈. 비교 도구는 두 이름 모두 비교에서 뺀다. 운영 학원은 바꾸지 않아도 된다(선택).
+- 배포 도구: GitHub Actions "예시 데이터 비우기 (최초 설치 전용)"(`.github/workflows/clear-example-data.yml`, `scripts/clear-example-data.py`·`.sql`) — 새 학원 설치 때 연결을 마친 뒤 Notion 예시 데이터와 Supabase 사본을 비우고 스스로 꺼진다. 원본 저장소에서는 실행되지 않는다. 새 학원 이식 체크리스트 4-1단계·5장. **설치가 끝난 운영에는 적용하지 않는다**(업데이트 때 이 작업 파일을 추가하지 않음).
+
 ## v2.7.4 — 2026-10-17
 
 - 확인 시험(버튼 두 번씩 눌러 중복 없음, 개별 진도·보강 학습기록, 출석 삭제 시 반 기록 유지), 운영 메뉴얼 갱신(시험·성적, 교재·학습, 보고서·수강료·교재비, 알림톡, 수강 등록·수업 버튼 문구), 원장님·선생님 안내, (선택) 교보문고 즐겨찾기. 지침: `docs/updates/v2.7.4.md`
