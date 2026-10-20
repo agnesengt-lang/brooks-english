@@ -374,3 +374,12 @@ v2.6.9 적용을 끝으로 origin(`hada-notion/project1`) main 고정 커밋 `bf
 | `sync-textbook-distribution` | 31 | 32 | ACTIVE |
 | `textbook-api` | 2 | 3 | ACTIVE |
 | `toggle-report-link` | 31 | 32 | ACTIVE |
+
+
+## v2.7.13 — 2026-10-20
+
+- 적용 주체: 운영 AI (소유자 승인). 공식 원본 기준: `970b135a81070c1b06c46bdd4df62eb5bc2f0e4a`의 `docs/updates/v2.7.13.md`. 운영 적용 전 기준: `9272a1714aa42a887e96b70e0ee5ac2a22be8197`.
+- 사전 확인: 운영 `scripts/check-known-regressions.sh`의 18번 검사에 `--exclude=operation-update-history.md`가 이미 있어 공식 수정이 반영된 상태였다. 운영 고유 `버튼-웹훅-매핑.md` 제외 규칙을 보존하고 스크립트는 교체하지 않았다.
+- 검증: 운영 main 사본에서 `bash scripts/check-known-regressions.sh` 실행, 종료 코드 0 및 회귀 가드 통과 확인. 이 v2.7.13 기록 추가 후에도 같은 검사를 재실행하여 통과 확인.
+- 변경 범위: 운영 업데이트 이력 및 Notion 시스템 정보의 버전·이력 기록만 갱신. 함수·화면·마이그레이션·Secrets·Notion 스키마·버튼·자동화·업무 데이터 변경 및 함수 재배포 없음. 매뉴얼 영향 없음.
+- 기존 제한 유지: Notion 버튼 신규 스캔·지문 비교·실동작 검증 미완료, 자동 함수 배포의 Push database migrations 실패 미해결. 과거 매뉴얼 갱신·테스트 데이터 정리는 별도 잔여 과제이며 이번 패치로 해결되었다고 보지 않는다.
