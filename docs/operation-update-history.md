@@ -323,3 +323,54 @@ v2.6.9 적용을 끝으로 origin(`hada-notion/project1`) main 고정 커밋 `bf
 - 이번 턴에서 현행 함수 런타임 코드 재배포는 미완료. 운영 버전을 전체 적용 완료로 올리지 않는다. Notion 버튼 신규 스캔·실동작 테스트와 기존 마이그레이션 CI 문제도 별도 미확인/미해결 상태다.
 
 - 공개 관리자 화면 JS·HTML 및 운영 설정 파일이 병합된 main과 바이트 동일함을 확인. Pages와 Web and docs checks 성공. 자동 Deploy Supabase Functions 실행 #39372807979 상태: [{"status": "completed", "conclusion": "failure", "failed_steps": ["Push database migrations"], "current_steps": []}] (자동 실행은 기존 main 병합으로 시작된 것이며 안전 검토 차단 후 별도 재실행을 요청하지 않음).
+
+
+## 공식 v2.7.10~v2.7.12 코드·화면·함수 배포 완료 — 2026-10-20
+
+- 적용 주체: 운영 AI (소유자의 추가 진행 승인 후 재배포). 직전 안전 검토 중단 이후 소유자에게 다시 승인받아 같은 Supabase MCP 배포 경로로 재개했다.
+- 배포 기준: 운영 main `05f480514ae1186ab92e19d6cf3e31b4c5b4318d`의 함수 코드는 검증된 정리 커밋 `eae4086f4e6ea73d11d7ea8ab9d02c687071c04e`와 차이가 없음을 확인. 준비한 현행 함수 35개 전부 직접 재배포 성공.
+- 최종 Supabase 목록 재조회: 현행 함수 집합 정확히 35개, 모두 ACTIVE, 각 버전이 배포 전보다 정확히 1 증가. 기존 verify_jwt 설정은 전부 유지. 정리 목록의 옛 함수 12개는 여전히 모두 없으며 재생성하지 않음.
+- 안전 응답 점검: process-sync-queue, status-watchdog, cascade-delete, sync-textbook-distribution, fix-attendance, send-report의 관리자 인증 없는 빈 POST 요청 6건 모두 HTTP 401. 함수 초기 로드·인증 거부 응답만 확인했으며, 실제 버튼 처리·알림톡 발송·삭제 기능의 종단간 성공을 뜻하지 않는다.
+- 사전 검증은 위 기록대로 단위 테스트 317개·현행 함수 타입 검사 35개·회귀 가드·관리자 체크리스트 34개/옛 항목 0개 통과. 공식 v2.7.10 수업 삭제 수정과 운영 고유 출석 처리·운영 설정 보존. 관리자 화면 Pages 반영도 완료.
+- 이번 재배포에서 업무 데이터, Notion 스키마·버튼·자동화, Secrets, 마이그레이션은 변경하지 않음. 실제 업무 데이터 삭제·알림톡 발송 테스트는 하지 않음.
+- 현재 상태: 공식 v2.7.12까지 코드·관리자 화면·현행 함수 배포 완료. Notion 버튼 내부 설정 신규 스캔·지문 비교·실동작 검증은 미완료로 남긴다. 기존 자동 배포 실행 #39372807979의 Push database migrations 실패도 해결하지 않았으며, 직접 함수 배포 성공과 자동 CI 정상화를 구분한다. 기존 매뉴얼 3단계 갱신·테스트 데이터 정리 등 과거 잔여 과제도 이번 범위 밖이다.
+
+### 최종 함수 버전
+
+| 함수 | 배포 전 | 배포 후 | 상태 |
+| --- | --- | --- | --- |
+| `admin-security` | 2 | 3 | ACTIVE |
+| `backfill-assignment-deadlines` | 32 | 33 | ACTIVE |
+| `cascade-delete` | 32 | 33 | ACTIVE |
+| `class-room` | 2 | 3 | ACTIVE |
+| `create-assignment` | 33 | 34 | ACTIVE |
+| `create-learning-record` | 31 | 32 | ACTIVE |
+| `fill-record-units` | 2 | 3 | ACTIVE |
+| `fix-attendance` | 32 | 33 | ACTIVE |
+| `generate-classes` | 32 | 33 | ACTIVE |
+| `get-legal-document-data` | 31 | 32 | ACTIVE |
+| `get-report-detail` | 31 | 32 | ACTIVE |
+| `get-report-fast` | 32 | 33 | ACTIVE |
+| `get-report-file` | 4 | 5 | ACTIVE |
+| `kiosk-checkin` | 34 | 35 | ACTIVE |
+| `kiosk-prepare` | 2 | 3 | ACTIVE |
+| `list-students` | 32 | 33 | ACTIVE |
+| `process-sync-queue` | 35 | 36 | ACTIVE |
+| `school-api` | 4 | 5 | ACTIVE |
+| `send-daily-report` | 35 | 36 | ACTIVE |
+| `send-inquiry-receipt` | 32 | 33 | ACTIVE |
+| `send-report` | 34 | 35 | ACTIVE |
+| `send-textbook-notice` | 32 | 33 | ACTIVE |
+| `send-tuition-notice` | 32 | 33 | ACTIVE |
+| `status-watchdog` | 33 | 34 | ACTIVE |
+| `sync-attendance` | 33 | 34 | ACTIVE |
+| `sync-class-report-cache` | 32 | 33 | ACTIVE |
+| `sync-class-room-copy` | 2 | 3 | ACTIVE |
+| `sync-dashboard-link` | 31 | 32 | ACTIVE |
+| `sync-failure-audit` | 31 | 32 | ACTIVE |
+| `sync-registration-textbook` | 33 | 34 | ACTIVE |
+| `sync-report-cache` | 33 | 34 | ACTIVE |
+| `sync-school-calendar` | 4 | 5 | ACTIVE |
+| `sync-textbook-distribution` | 31 | 32 | ACTIVE |
+| `textbook-api` | 2 | 3 | ACTIVE |
+| `toggle-report-link` | 31 | 32 | ACTIVE |
