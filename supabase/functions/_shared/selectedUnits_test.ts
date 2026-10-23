@@ -22,9 +22,8 @@ Deno.test("range: comma separated segments, each from its first to last number",
 	assert(ur.unitsForRange([{ id: "x", page: null }], "p.3").length === 0, "units without start pages")
 })
 
-function notion(opts: { relationName?: string | null; book?: string | null; range?: string; progress?: string[]; progressBooks?: Record<string, string[]>; deletedProgress?: boolean } = {}) {
+function notion(opts: { relationName?: string | null; book?: string | null; range?: string } = {}) {
 	const patches: any[] = []
-	const reads: string[] = []
 	const rel = opts.relationName === undefined ? "단원" : opts.relationName
 	const schema: Record<string, unknown> = { "단원(수식)": { type: "formula" } }
 	if (rel) schema[rel] = { type: "relation" }
@@ -33,16 +32,12 @@ function notion(opts: { relationName?: string | null; book?: string | null; rang
 		const url = String(input)
 		const reply = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status })
 		if (url.endsWith(`/data_sources/${DS_LEARNING_RECORD}`)) return reply({ properties: schema })
-		if (url.endsWith("/data_sources/units/query")) { assert(JSON.parse(init.body).filter.relation.contains === BOOK, "query must use the library book id, not the progress id"); return reply({ results: unitPages, has_more: false }) }
+		if (url.endsWith("/data_sources/units/query")) return reply({ results: unitPages, has_more: false })
 		if (url.includes(`/pages/${REC}`) && init.method === "PATCH") { patches.push(JSON.parse(init.body)); return reply({ id: REC }) }
-		if (url.includes(`/pages/${REC}`)) return reply({ id: REC, properties: { "범위": { type: "rich_text", rich_text: [{ plain_text: opts.range ?? "p.20-30, 61" }] }, "교재": { type: "relation", relation: opts.book === null ? [] : [{ id: opts.book ?? BOOK }] }, "진도교재": { type: "relation", relation: (opts.progress ?? []).map((id) => ({ id })) } } })
-		for (const id of opts.progress ?? []) if (url.endsWith(`/pages/${id}`)) {
-			reads.push(id)
-			return reply({ id, archived: opts.deletedProgress ?? false, properties: { "라이브러리": { type: "relation", relation: (opts.progressBooks?.[id] ?? []).map((id) => ({ id })) } } })
-		}
+		if (url.includes(`/pages/${REC}`)) return reply({ id: REC, properties: { "범위": { type: "rich_text", rich_text: [{ plain_text: opts.range ?? "p.20-30, 61" }] }, "교재": { type: "relation", relation: opts.book === null ? [] : [{ id: opts.book ?? BOOK }] } } })
 		throw new Error("unmocked " + url)
 	}
-	return { fetch, patches, reads }
+	return { fetch, patches }
 }
 async function withNotion(n: ReturnType<typeof notion>, run: () => Promise<void>) {
 	const original = globalThis.fetch; globalThis.fetch = n.fetch as typeof fetch; su.resetSelectedUnitsEnabled()
@@ -85,57 +80,4 @@ Deno.test("unit text: picked units first, then the 단원 formula under either n
 	assert(su.unitTextOf({ properties: { "단원": { type: "formula", formula: { type: "string", string: "옛 수식" } } } }, names) === "옛 수식", "before the rename")
 	assert(su.unitIdsOf(relPage("단원")).join() === U(1) + "," + U(2) && su.unitIdsOf({ properties: { "단원": { type: "formula" } } }).length === 0)
 	assert(JSON.stringify(su.cleanUnitIds([U(1), "x", U(1)])) === JSON.stringify([U(1)]) && su.cleanUnitIds("x") === null)
-})
-
-const PROGRESS = "dddddddd-dddd-4ddd-8ddd-dddddddddddd", PROGRESS2 = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
-
-Deno.test("[단원 입력]: resolves 진도교재 → 라이브러리 when direct 교재 is empty", async () => {
-	const n = notion({ book: null, progress: [PROGRESS], progressBooks: { [PROGRESS]: [BOOK] } })
-	await withNotion(n, async () => {
-		const r = await su.fillRecordUnits(REC, SRC)
-		assert(r.units.join("|") === "1-1. 소인수분해|1-2. 정수|2-1. 문자", JSON.stringify(r))
-		assert(n.patches.length === 1 && n.reads.join() === PROGRESS)
-	})
-})
-
-Deno.test("[단원 입력]: direct 교재 takes precedence without reading 진도교재", async () => {
-	const n = notion({ progress: [PROGRESS] })
-	await withNotion(n, async () => {
-		await su.fillRecordUnits(REC, SRC)
-		assert(n.reads.length === 0 && n.patches.length === 1)
-	})
-})
-
-Deno.test("[단원 입력]: empty range still clears units through 진도교재", async () => {
-	const n = notion({ book: null, range: "", progress: [PROGRESS], progressBooks: { [PROGRESS]: [BOOK] } })
-	await withNotion(n, async () => {
-		const r = await su.fillRecordUnits(REC, SRC)
-		assert(r.units.length === 0 && /비웠/.test(r.note))
-		assert(n.patches[0].properties["단원"].relation.length === 0)
-	})
-})
-
-Deno.test("[단원 입력]: multiple progress links to the same library book are safe", async () => {
-	const n = notion({ book: null, progress: [PROGRESS, PROGRESS, PROGRESS2], progressBooks: { [PROGRESS]: [BOOK], [PROGRESS2]: [BOOK] } })
-	await withNotion(n, async () => {
-		const r = await su.fillRecordUnits(REC, SRC)
-		assert(r.units.length === 3 && n.patches.length === 1 && n.reads.length === 2)
-	})
-})
-
-Deno.test("[단원 입력]: missing, deleted, or ambiguous progress library never writes units", async () => {
-	const cases: NonNullable<Parameters<typeof notion>[0]>[] = [
-		{ progress: [PROGRESS] },
-		{ progress: [PROGRESS], deletedProgress: true, progressBooks: { [PROGRESS]: [BOOK] } },
-		{ progress: [PROGRESS, PROGRESS2], progressBooks: { [PROGRESS]: [BOOK], [PROGRESS2]: [U(9)] } },
-		{ progress: [PROGRESS], progressBooks: { [PROGRESS]: [BOOK, U(9)] } },
-	]
-	for (const opts of cases) {
-		const n = notion({ book: null, ...opts })
-		await withNotion(n, async () => {
-			try { await su.fillRecordUnits(REC, SRC); throw new Error("expected") }
-			catch (e) { assert(e instanceof su.FillUnitsError && e.status === 409 && /진도교재/.test(e.message), (e as Error).message) }
-			assert(n.patches.length === 0, "must not modify the existing unit relation")
-		})
-	}
 })

@@ -81,25 +81,6 @@ async function bookUnitsFor(src: LibrarySources, bookId: string): Promise<{ id: 
 		.map((u) => ({ id: u.id, name: u.name, page: u.start_page }))
 }
 
-// 예전 기록은 교재를 직접 연결하고, 현재 기록은 진도교재 → 라이브러리로 연결한다.
-// 직접 연결을 우선해 기존 동작을 유지한다. 여러 진도교재가 서로 다른 책을 가리키면 쓰지 않는다.
-async function recordBookId(record: Page): Promise<string> {
-	const direct = relationIds(record.properties?.["교재"])[0]
-	if (direct) return direct
-	const bookIds = new Set<string>()
-	for (const id of new Set(relationIds(record.properties?.["진도교재"]))) {
-		const progress = await getPage(id) as Page
-		if (progress.archived || progress.in_trash) throw new FillUnitsError(409, "연결된 진도교재가 삭제되어 단원을 찾을 수 없습니다.")
-		const ids = relationIds(progress.properties?.["라이브러리"])
-		if (!ids.length) throw new FillUnitsError(409, "연결된 진도교재의 라이브러리가 비어 있어 단원을 찾을 수 없습니다.")
-		for (const bookId of ids) bookIds.add(bookId)
-	}
-	if (bookIds.size > 1) throw new FillUnitsError(409, "연결된 진도교재에 라이브러리 교재가 여러 권 있어 단원을 선택할 수 없습니다.")
-	const bookId = [...bookIds][0]
-	if (!bookId) throw new FillUnitsError(409, "이 학습기록에는 교재(라이브러리) 또는 진도교재 연결이 없어 단원을 찾을 수 없습니다.")
-	return bookId
-}
-
 // 학습기록의 범위로 단원을 새로 채운다(덮어쓰기). 범위가 비었거나 맞는 단원이 없으면 비운다.
 export async function fillRecordUnits(recordId: string, src: LibrarySources) {
 	if (!isId(recordId)) throw new FillUnitsError(400, "학습기록을 찾지 못했습니다(pageId).")
@@ -107,7 +88,8 @@ export async function fillRecordUnits(recordId: string, src: LibrarySources) {
 	if (!prop) throw new FillUnitsError(409, '학습기록 DB에 단원 관계 속성("단원" 또는 "선택 단원")이 없습니다.')
 	const record = await getPage(recordId) as Page
 	const range = text(record.properties?.["범위"]).trim()
-	const bookId = await recordBookId(record)
+	const bookId = relationIds(record.properties?.["교재"])[0] ?? null
+	if (!bookId) throw new FillUnitsError(409, "이 학습기록에는 교재(라이브러리)가 없어 단원을 찾을 수 없습니다.")
 	const units = await bookUnitsFor(src, bookId)
 	const picked = unitsForRange(units, range)
 	await updatePageProperties(record.id, { [prop]: { relation: picked.map((u) => ({ id: u.id })) } })
