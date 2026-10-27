@@ -1,8 +1,6 @@
-// (v2.6.14, 웹훅 재정리) 시간표 수식 "수업추가 정보"로 수업 페이지를 Notion 호출 1번(만들기)으로 만든다.
-// 수식이 기준일·등원/하원 시간·클래스·클래스 이름·담당강사·그날 수강 중인 명단을 JSON 한 줄로 계산하므로,
-// 서버는 시간표·클래스 페이지 읽기와 등록 조회를 하지 않는다. 메뉴 일괄 생성은 시간표 DB를 한 번 조회할 때
-// 수식 값이 함께 오므로 그 값을 큐 항목에 담고, 워커는 그 값으로 바로 만든다. 출석은 출석 조정 큐가 만든다.
-import { createPage, pickProp, relIds } from "./notionClient.ts"
+// Session plan parsing is retained for legacy payload compatibility. Operating generation
+// re-reads KST source dates and roster, and checks the session natural key before creating.
+import { createPage, pickProp, relIds, queryDataSource } from "./notionClient.ts"
 import { DS_CLASS_SESSION } from "./constants.ts"
 import { STATUS_DONE } from "./statusTracking.ts"
 
@@ -73,8 +71,26 @@ export function sessionTitle(className: string, date: string): string {
 	return `${className} ${date.slice(5, 7)}.${date.slice(8, 10)}(${wd})`
 }
 
+// Read-only natural-key lookup; a timestamp is compared as an instant, not a UTC calendar day.
+export async function findSessionAt(timetableId: string, start: string): Promise<any | null> {
+  const existing = await queryDataSource(DS_CLASS_SESSION, {
+    filter: { and: [
+      { property: "시간표", relation: { contains: timetableId } },
+      { property: "수업일시", date: { equals: start } },
+    ] },
+    page_size: 1,
+  })
+  return existing.results?.[0] ?? null
+}
+
 // 수업 페이지를 명단과 함께 ✅ 완료로 만든다(출석 조정 큐 적재는 호출부 — 만들기 성공 뒤 실패를 따로 다루려고).
 export async function createSessionFromPlan(timetableId: string, plan: SessionPlan): Promise<string> {
+  const start = `${plan.date}T${plan.start}:00+09:00`
+  const existing = await findSessionAt(timetableId, start)
+  if (existing) {
+    console.log("[generate-classes] duplicate prevented:", timetableId, start)
+    return existing.id
+  }
 	const page = await createPage(DS_CLASS_SESSION, {
 		이름: { title: [{ text: { content: sessionTitle(plan.className, plan.date) } }] },
 		수업일시: { date: { start: `${plan.date}T${plan.start}:00+09:00`, end: `${plan.date}T${plan.end}:00+09:00` } },

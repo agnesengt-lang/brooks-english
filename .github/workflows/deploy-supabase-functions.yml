@@ -36,7 +36,7 @@ jobs:
         run: deno test --allow-env supabase/functions/_shared/kioskIdentity_test.ts supabase/functions/_shared/kioskSendLog_test.ts supabase/functions/_shared/academyName_test.ts supabase/functions/_shared/stepTiming_test.ts supabase/functions/_shared/kioskToday_test.ts supabase/functions/_shared/kioskPolicy_test.ts
 
       - name: Test assignment deadlines and chronological bulk order
-        run: deno test --allow-env supabase/functions/_shared/assignmentDeadline_test.ts supabase/functions/_shared/bulkClassOrder_test.ts supabase/functions/generate-classes/index_test.ts
+        run: deno test --allow-env supabase/functions/_shared/assignmentDeadline_test.ts supabase/functions/_shared/bulkClassOrder_test.ts supabase/functions/_shared/seoulCalendarDate_test.ts supabase/functions/generate-classes/index_test.ts
 
       - name: Test individual textbook ownership and class lookup
         run: deno test --allow-env supabase/functions/_shared/registrationTextbookTarget_test.ts supabase/functions/_shared/learningRecordShare_test.ts supabase/functions/_shared/fixAttendanceTarget_test.ts supabase/functions/_shared/createLearningRecordBlock_test.ts supabase/functions/_shared/sessionDateMove_test.ts supabase/functions/_shared/dailyReportQueue_test.ts supabase/functions/_shared/assignmentPlan_test.ts supabase/functions/_shared/noticeQueue_test.ts supabase/functions/_shared/cartPlan_test.ts supabase/functions/_shared/createLearningRecordPlan_test.ts supabase/functions/_shared/cascadeDeleteLean_test.ts supabase/functions/_shared/relationFull_test.ts supabase/functions/_shared/propAliases_test.ts supabase/functions/_shared/menuDataSource_test.ts
